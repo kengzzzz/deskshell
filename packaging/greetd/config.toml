@@ -1,0 +1,8 @@
+# /etc/greetd/config.toml for deskshell-greeter.
+
+[terminal]
+vt = 1
+
+[default_session]
+command = "/etc/greetd/deskshell-greeter.sh"
+user = "greeter"

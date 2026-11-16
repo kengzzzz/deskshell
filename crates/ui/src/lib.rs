@@ -1,0 +1,41 @@
+//! Shared widgets, theme and fonts for the shell, the lock and the greeter.
+
+pub mod anim;
+mod app_icon;
+mod chip;
+mod clip;
+pub mod focus_grab;
+pub mod fonts;
+mod frame;
+mod header;
+pub mod icon;
+pub mod image;
+pub mod lock;
+mod picture;
+mod pill;
+mod primed;
+pub mod scroll;
+pub mod search_field;
+mod switch;
+pub mod text;
+pub mod text_input;
+pub mod theme;
+pub mod zone;
+
+pub use app_icon::app_icon;
+pub use chip::{key_chip, key_hint};
+pub use clip::{ClipX, clip_x};
+pub use frame::panel_frame;
+pub use header::{PanelHeader, panel_header};
+pub use icon::{Icon, icon};
+pub use lock::{avatar, lock_chip, pin_field};
+pub use picture::Picture;
+pub use pill::{PillButton, pill_button};
+pub use primed::primed;
+pub use scroll::{Scroll, scroll};
+pub use search_field::{SearchField, search_field};
+pub use switch::switch;
+pub use text_input::{TextInput, text_input};
+pub use theme::Theme;
+pub mod touch_indicator;
+pub use touch_indicator::{TouchIndicator, touch_indicator};

@@ -1,0 +1,63 @@
+--- a/src/window/compositor.rs
++++ b/src/window/compositor.rs
+@@ -7,6 +7,23 @@
+ use crate::settings::{self, Settings};
+ use crate::{Engine, Renderer};
+ 
++/// Opens the device in place of `Adapter::request_device`.
++///
++/// `None` falls back to `request_device`. deskshell uses this to enable Vulkan
++/// extensions that wgpu does not request on its own. Not part of upstream iced.
++pub type DeviceHook = fn(
++    &wgpu::Adapter,
++    &wgpu::DeviceDescriptor<'_>,
++) -> Option<Result<(wgpu::Device, wgpu::Queue), wgpu::RequestDeviceError>>;
++
++static DEVICE_HOOK: std::sync::OnceLock<DeviceHook> = std::sync::OnceLock::new();
++
++/// Sets the [`DeviceHook`] for every compositor created afterwards. Only the
++/// first call takes effect. Returns whether this call set it.
++pub fn set_device_hook(hook: DeviceHook) -> bool {
++    DEVICE_HOOK.set(hook).is_ok()
++}
++
+ /// A window graphics backend for iced powered by `wgpu`.
+ pub struct Compositor {
+     instance: wgpu::Instance,
+@@ -161,19 +178,23 @@
+         let mut errors = Vec::new();
+ 
+         for required_limits in limits {
+-            let result = adapter
+-                .request_device(&wgpu::DeviceDescriptor {
+-                    label: Some(
+-                        "iced_wgpu::window::compositor device descriptor",
+-                    ),
+-                    required_features: wgpu::Features::empty(),
+-                    required_limits: required_limits.clone(),
+-                    memory_hints: wgpu::MemoryHints::MemoryUsage,
+-                    trace: wgpu::Trace::Off,
+-                    experimental_features: wgpu::ExperimentalFeatures::disabled(
+-                    ),
+-                })
+-                .await;
++            let descriptor = wgpu::DeviceDescriptor {
++                label: Some("iced_wgpu::window::compositor device descriptor"),
++                required_features: wgpu::Features::empty(),
++                required_limits: required_limits.clone(),
++                memory_hints: wgpu::MemoryHints::MemoryUsage,
++                trace: wgpu::Trace::Off,
++                experimental_features: wgpu::ExperimentalFeatures::disabled(),
++            };
++
++            let hooked = DEVICE_HOOK
++                .get()
++                .and_then(|hook| hook(&adapter, &descriptor));
++
++            let result = match hooked {
++                Some(result) => result,
++                None => adapter.request_device(&descriptor).await,
++            };
+ 
+             match result {
+                 Ok((device, queue)) => {

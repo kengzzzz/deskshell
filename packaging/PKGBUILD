@@ -1,0 +1,100 @@
+# Builds the commit checked out in this repository. Uncommitted changes are not in the
+# package. Run makepkg from anywhere inside the repository, for example:
+#   cd packaging && makepkg
+
+pkgname=deskshell
+pkgver=0.1.0.r606.g14b29a4
+pkgrel=1
+pkgdesc="Native desktop shell for Hyprland: bar, panels, notifications, session lock and greeter"
+arch=(x86_64)
+license=('MIT OR Apache-2.0' OFL-1.1 Apache-2.0)
+depends=(gcc-libs glibc pam hyprland wayland libxkbcommon vulkan-icd-loader)
+makedepends=(cargo git)
+optdepends=('greetd: the greeter, installed by hand from /usr/share/deskshell/greetd'
+            'wl-clipboard: the color copy of hyprpicker in the launcher'
+            'pipewire-pulse: volume, the OSD and the spectrum'
+            'libqalculate: the launcher calculator beyond plain arithmetic (qalc)'
+            'ttf-jetbrains-mono-nerd: the media panel controls'
+            'polkit: the polkit agent'
+            'gnome-keyring: the keyring prompt'
+            'gnupg: unlock the keyring with a YubiKey'
+            "paru: the Hub's Terminal button and the update runner"
+            "kitty: the Hub's Terminal button")
+options=(!lto !debug)
+install=deskshell.install
+
+_repo=$(git -C "$startdir" rev-parse --show-toplevel)
+_commit=$(git -C "$startdir" rev-parse HEAD)
+source=("$pkgname::git+file://$_repo#commit=$_commit")
+sha256sums=('SKIP')
+
+_bins=(deskshell-pam deskshell-lock deskshell-gpg deskshell-bridge deskshell-greeter deskshell)
+
+pkgver() {
+    cd "$pkgname"
+    local version
+    version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+    printf '%s.r%s.g%s' "$version" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+    cd "$pkgname"
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$pkgname"
+    export CARGO_TARGET_DIR="$srcdir/target"
+    # One invocation per binary, so a binary never gets features another one asked for.
+    # A workspace build would compile deskshell-auth with `async` into the PAM worker.
+    local bin
+    for bin in "${_bins[@]}"; do
+        cargo build --frozen --release -p "$bin"
+    done
+}
+
+check() {
+    cd "$srcdir/target/release"
+    # Allowed links: glibc parts and the unwinder, plus libpam in the PAM worker.
+    # Everything else is reached over a protocol or opened with dlopen.
+    local bin lib allowed status=0
+    for bin in "${_bins[@]}"; do
+        allowed=' libc.so.6 libm.so.6 libgcc_s.so.1 ld-linux-x86-64.so.2 '
+        [[ $bin == deskshell-pam ]] && allowed+='libpam.so.0 '
+        while read -r lib; do
+            if [[ $allowed != *" $lib "* ]]; then
+                printf '%s links %s, which is not allowed\n' "$bin" "$lib" >&2
+                status=1
+            fi
+        done < <(readelf -d "$bin" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+    done
+    return "$status"
+}
+
+package() {
+    cd "$pkgname"
+    local bin
+    for bin in "${_bins[@]}"; do
+        install -Dm755 "$srcdir/target/release/$bin" "$pkgdir/usr/bin/$bin"
+    done
+    install -Dm644 packaging/systemd/*.service packaging/systemd/*.target \
+        -t "$pkgdir/usr/lib/systemd/user/"
+    # Drop-ins, because uwsm ships the slice files and two packages cannot own one unit.
+    local slice
+    for slice in app-graphical background-graphical; do
+        install -Dm644 "packaging/systemd/$slice.slice.d/deskshell.conf" \
+            -t "$pkgdir/usr/lib/systemd/user/$slice.slice.d/"
+    done
+    # Examples. Inactive until copied into /etc by hand.
+    install -Dm644 packaging/greetd/config.toml packaging/greetd/deskshell-hyprland.lua \
+        packaging/greetd/greeter.toml packaging/greetd/deskshell-greeter.tmpfiles \
+        -t "$pkgdir/usr/share/deskshell/greetd/"
+    install -Dm755 packaging/greetd/deskshell-greeter.sh -t "$pkgdir/usr/share/deskshell/greetd/"
+    install -Dm755 packaging/update-askpass "$pkgdir/usr/lib/deskshell/update-askpass"
+    install -Dm644 LICENSE-MIT LICENSE-APACHE crates/ui/assets/fonts/OFL-1.1.txt \
+        -t "$pkgdir/usr/share/licenses/$pkgname/"
+    install -Dm644 packaging/udev/70-deskshell-cpu-power.rules -t "$pkgdir/usr/lib/udev/rules.d/"
+    install -Dm644 packaging/sysusers/deskshell.conf "$pkgdir/usr/lib/sysusers.d/deskshell.conf"
+    # xdg-desktop-portal-hyprland's picker. deskshell dispatches on argv[0].
+    ln -s /usr/bin/deskshell "$pkgdir/usr/lib/deskshell/share-picker"
+}

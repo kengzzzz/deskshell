@@ -1,0 +1,23 @@
+[Icon Theme]
+Name=Child
+Inherits=Missing,Parent
+Directories=16x16/apps,48x48/apps,scalable/apps,24x24@2/apps
+
+[16x16/apps]
+Size=16
+Type=Threshold
+
+[48x48/apps]
+Size=48
+Type=Fixed
+
+[scalable/apps]
+Size=48
+Type=Scalable
+MinSize=8
+MaxSize=512
+
+[24x24@2/apps]
+Size=24
+Scale=2
+Type=Fixed

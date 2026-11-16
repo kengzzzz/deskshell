@@ -1,0 +1,44 @@
+[package]
+name = "deskshell-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["async"]
+async = ["dep:rustix", "dep:tokio", "dep:tracing"]
+
+[dependencies]
+libc.workspace = true
+rustix = { workspace = true, features = ["fs"], optional = true }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "process", "rt", "sync", "time"], optional = true }
+tracing = { workspace = true, optional = true }
+zeroize.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
+tracing-subscriber.workspace = true
+
+[[test]]
+name = "worker"
+harness = false
+required-features = ["async"]
+
+[[example]]
+name = "vm_pam_probe"
+required-features = ["async"]
+
+[[example]]
+name = "fake_fido"
+required-features = ["async"]
+
+[[example]]
+name = "touch_probe"
+required-features = ["async"]
+
+[lints]
+workspace = true

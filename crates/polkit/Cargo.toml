@@ -1,0 +1,19 @@
+[package]
+name = "deskshell-polkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+libc.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt", "sync", "time"] }
+tracing.workspace = true
+zbus.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

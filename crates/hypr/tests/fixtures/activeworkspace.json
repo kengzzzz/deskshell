@@ -1,0 +1,14 @@
+{
+    "address": "2",
+    "id": 2,
+    "type": "normal",
+    "name": "2",
+    "monitor": "DP-3",
+    "monitorID": 0,
+    "windows": 1,
+    "hasfullscreen": false,
+    "lastwindow": "0x560000000050",
+    "lastwindowtitle": "Remote Desktop",
+    "ispersistent": false,
+    "tiledLayout": "scrolling"
+}

@@ -1,0 +1,5 @@
+/deskshell/
+/src/
+/pkg/
+*.pkg.tar.*
+*.log

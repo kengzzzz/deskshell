@@ -1,0 +1,1 @@
+export NODEVICE_SELECT=1

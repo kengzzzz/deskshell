@@ -1,0 +1,20 @@
+# Ends the deskshell session when the login process %i exits, so a killed login process
+# still stops Hyprland and gets its cleanup. PartOf= passes a stop of Hyprland on and pulls
+# nothing in, and Before= makes that stop reach this unit last.
+#
+# Type=notify: the watcher sends READY=1 once it holds the login process through a pidfd and
+# has checked its start time, so the login goes on only after that, and a PID taken by
+# another process in between is never watched in its place.
+
+[Unit]
+Description=End the deskshell session when login process %i exits
+PartOf=deskshell-hyprland.service
+Before=deskshell-hyprland.service
+CollectMode=inactive-or-failed
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/deskshell session watch %i
+TimeoutStartSec=10
+Slice=background.slice

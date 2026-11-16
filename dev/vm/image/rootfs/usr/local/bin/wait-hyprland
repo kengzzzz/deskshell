@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# wait-hyprland [SECONDS]: wait until tester's Hyprland reports a monitor, then print its name.
+set -euo pipefail
+deadline=$((SECONDS + ${1:-60}))
+while ((SECONDS < deadline)); do
+    if out=$(as-tester hyprctl -j monitors 2>/dev/null) && [[ $out == *'"name"'* ]]; then
+        name=${out#*\"name\": \"}
+        printf '%s\n' "${name%%\"*}"
+        exit 0
+    fi
+    sleep 0.2
+done
+echo "Hyprland did not come up" >&2
+exit 1

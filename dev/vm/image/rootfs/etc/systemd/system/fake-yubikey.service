@@ -1,0 +1,5 @@
+[Unit]
+Description=Fake YubiKey on uhid
+
+[Service]
+ExecStart=/usr/local/bin/fake-yubikey

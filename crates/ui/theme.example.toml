@@ -1,0 +1,68 @@
+# deskshell theme
+#
+# Copy this file to $XDG_CONFIG_HOME/deskshell/theme.toml (or ~/.config/deskshell/theme.toml)
+# and keep only the keys you change. Every key is optional. A missing key keeps the default
+# shown here. Unknown keys are logged and ignored. The running shell reloads the file when
+# it is saved.
+#
+# Colors are "#rrggbb" or "#aarrggbb". Alpha comes first, as in Qt: "#800e1220" is #0e1220
+# at 50% alpha.
+
+[colors]
+overlay_backdrop = "#59060912"
+glass = "#800e1220"
+glass_dense = "#a30e1220"
+solid = "#171c2b"
+highlight = "#24ffffff"
+well = "#33000000"
+surface_active = "#29ffffff"
+text_primary = "#eef2ff"
+text_secondary = "#a8eef2ff"
+text_muted = "#80eef2ff"
+border = "#38ffffff"
+border_muted = "#1affffff"
+accent = "#ebecf2ff"
+accent_text = "#0d1424"
+tint = "#a5d4ff"
+tint_container = "#29a5d4ff"
+container = "#0dffffff"
+container_high = "#17ffffff"
+container_highest = "#1fffffff"
+accent_container = "#24ffffff"
+info = "#a5d4ff"
+success = "#9ff0bd"
+success_container = "#298ce6aa"
+warning = "#ffdcae"
+warning_container = "#33ffc882"
+danger = "#ffb4c0"
+danger_container = "#2eff788c"
+
+# Family names. The defaults are embedded in the binary, except mono, which comes from the
+# system. Icons always use the embedded Material Symbols Rounded.
+[fonts]
+ui = "IBM Plex Sans"
+thai = "IBM Plex Sans Thai Looped"
+mono = "JetBrainsMono Nerd Font"
+
+# Logical pixels.
+[sizes]
+bar_height = 48
+bar_exclusive_zone = 54
+bar_margin_top = 6
+bar_margin_side = 10
+bar_pill_height = 40
+bar_pill_radius = 20
+panel_radius = 28
+panel_padding = 16
+spacing = 8
+text_title = 20
+text_body = 14
+text_label = 13
+text_small = 12
+text_clock = 15
+icon = 20
+icon_bar = 18
+
+# The freedesktop icon theme for app icons.
+[icons]
+theme = "hicolor"

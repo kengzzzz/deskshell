@@ -1,0 +1,5 @@
+/target/
+/.claude/
+/docs
+CLAUDE.local.md
+CLAUDE.md

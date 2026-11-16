@@ -1,0 +1,19 @@
+[package]
+name = "deskshell-gpg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+deskshell-auth.workspace = true
+rustix = { workspace = true, features = ["fs", "net", "process"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "signal", "sync", "time"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

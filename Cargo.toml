@@ -1,0 +1,84 @@
+[workspace]
+members = ["crates/*"]
+exclude = ["vendor"]
+resolver = "3"
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.100.0"
+publish = false
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kengzzzz/deskshell"
+
+[workspace.dependencies]
+deskshell-auth = { path = "crates/auth", default-features = false }
+deskshell-apps = { path = "crates/apps" }
+deskshell-core = { path = "crates/core" }
+deskshell-hypr = { path = "crates/hypr" }
+deskshell-ipc = { path = "crates/ipc" }
+deskshell-media = { path = "crates/media" }
+deskshell-net = { path = "crates/net" }
+deskshell-notify = { path = "crates/notify" }
+deskshell-polkit = { path = "crates/polkit" }
+deskshell-system = { path = "crates/system" }
+deskshell-tray = { path = "crates/tray" }
+deskshell-ui = { path = "crates/ui" }
+deskshell-wl = { path = "crates/wl" }
+ash = { version = "0.38.0", default-features = false, features = ["std"] }
+iced = { version = "0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "tokio", "wayland", "advanced"] }
+iced_exwlshell = { version = "0.21.4", default-features = false, features = ["macros"] }
+iced_test = "0.14.0"
+iced_wgpu = "0.14.0"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
+jiff = "0.2.43"
+libc = "0.2.191"
+libloading = "0.9.0"
+pulseaudio = "0.3.2"
+realfft = "3.5.1"
+rustix = "1.1.6"
+ryu-js = "1.0.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tokio = "1.54.1"
+toml = "1.2.1"
+tracing = "0.1.44"
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["std", "fmt", "ansi", "env-filter"] }
+ureq = "3.5.2"
+wayland-client = "0.31.15"
+wayland-protocols = { version = "0.32.13", features = ["client"] }
+wayland-protocols-hyprland = { version = "1.2.0", features = ["client"] }
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
+zbus = { version = "6.2.1", default-features = false, features = ["tokio", "proxy", "service", "tracing"] }
+zeroize = "1.9.1"
+
+[patch.crates-io]
+# Adds a device hook so the shell can enable VK_EXT_image_drm_format_modifier. See vendor/README.md.
+iced_wgpu = { path = "vendor/iced_wgpu" }
+
+[workspace.lints.clippy]
+allow_attributes_without_reason = "warn"
+clone_on_ref_ptr = "warn"
+implicit_clone = "warn"
+needless_pass_by_value = "warn"
+ref_option = "warn"
+
+[workspace.lints.cargo]
+unused_dependencies = "deny"
+
+# Keep panic at its default, "unwind". Panic hooks decide what aborts.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+
+[profile.dev]
+debug = "line-tables-only"
+
+# Dependencies are optimized in dev builds. Unoptimized image, SVG and GPU code made the
+# launcher's icons take seconds to load, which hid real costs in debug runs and guests.
+[profile.dev.package."*"]
+debug = 0
+opt-level = 2

@@ -1,0 +1,23 @@
+[package]
+name = "deskshell-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+futures-core = "0.3.34"
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tracing.workspace = true
+zbus.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["signal", "test-util"] }
+zbus = { workspace = true, features = ["object-manager"] }
+
+[lints]
+workspace = true

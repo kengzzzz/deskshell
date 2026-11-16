@@ -1,0 +1,18 @@
+# Lets the group deskshell-power write each CPU's cpufreq governor and EPP, so deskshell sets
+# the CPU power mode with no root. A cpufreq policy sends no uevent udev can match, so the rule
+# runs on the cpu device, whose cpufreq entry links to its policy. MODE and GROUP apply to
+# device nodes only, so the sysfs files need RUN. A CPU first brought online after the boot
+# gets a new policy, so the rule runs on online too.
+
+ACTION!="add|online", GOTO="deskshell_cpu_power_end"
+SUBSYSTEM!="cpu", GOTO="deskshell_cpu_power_end"
+KERNEL!="cpu[0-9]*", GOTO="deskshell_cpu_power_end"
+
+TEST=="cpufreq/scaling_governor", \
+  RUN+="/usr/bin/chgrp deskshell-power $sys$devpath/cpufreq/scaling_governor", \
+  RUN+="/usr/bin/chmod g+w $sys$devpath/cpufreq/scaling_governor"
+TEST=="cpufreq/energy_performance_preference", \
+  RUN+="/usr/bin/chgrp deskshell-power $sys$devpath/cpufreq/energy_performance_preference", \
+  RUN+="/usr/bin/chmod g+w $sys$devpath/cpufreq/energy_performance_preference"
+
+LABEL="deskshell_cpu_power_end"

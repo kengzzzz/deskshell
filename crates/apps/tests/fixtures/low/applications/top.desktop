@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Top
+Exec=htop
+Terminal=true
+Path=/srv/work
+Icon=htop
+Categories=System;Monitor;
+Keywords=process;cpu;

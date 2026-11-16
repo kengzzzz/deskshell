@@ -1,0 +1,25 @@
+[package]
+name = "deskshell-wl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ash.workspace = true
+iced.workspace = true
+iced_wgpu.workspace = true
+rustix = { workspace = true, features = ["event", "fs", "mm", "pipe"] }
+tracing.workspace = true
+wayland-client.workspace = true
+wayland-protocols = { workspace = true, features = ["staging", "unstable"] }
+wayland-protocols-hyprland.workspace = true
+wayland-protocols-wlr.workspace = true
+
+[dev-dependencies]
+iced_exwlshell.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Calculator
+Name[th]=เครื่องคิดเลข
+GenericName=Calculator
+GenericName[th_TH]=โปรแกรมคิดเลข
+Comment=Do math
+Exec=calc
+Icon=calc

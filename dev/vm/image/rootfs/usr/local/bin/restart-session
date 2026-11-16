@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# restart-session: end tester's Hyprland session and log in again automatically.
+set -euo pipefail
+# greetd runs the autologin session once per boot unless its runfile is gone.
+rm -f /run/greetd.run
+systemctl restart greetd
+wait-hyprland "${1:-30}"

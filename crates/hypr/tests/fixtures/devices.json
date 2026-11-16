@@ -1,0 +1,105 @@
+{
+    "mice": [
+        {
+            "address": "0x560000000070",
+            "name": "example-mouse",
+            "defaultSpeed": 0.0,
+            "scrollFactor": -1.0
+        },
+        {
+            "address": "0x560000000080",
+            "name": "example-keyboard-2",
+            "defaultSpeed": 0.0,
+            "scrollFactor": -1.0
+        }
+    ],
+    "keyboards": [
+        {
+            "address": "0x560000000090",
+            "name": "example-keyboard",
+            "rules": "",
+            "model": "",
+            "layout": "us,de",
+            "variant": "",
+            "options": "grp:win_space_toggle",
+            "active_layout_index": 0,
+            "active_keymap": "English (US)",
+            "capsLock": false,
+            "numLock": true,
+            "main": true
+        },
+        {
+            "address": "0x5600000000a0",
+            "name": "example-keyboard-1",
+            "rules": "",
+            "model": "",
+            "layout": "us,de",
+            "variant": "",
+            "options": "grp:win_space_toggle",
+            "active_layout_index": 0,
+            "active_keymap": "English (US)",
+            "capsLock": false,
+            "numLock": true,
+            "main": false
+        },
+        {
+            "address": "0x5600000000b0",
+            "name": "example-consumer-control",
+            "rules": "",
+            "model": "",
+            "layout": "us,de",
+            "variant": "",
+            "options": "grp:win_space_toggle",
+            "active_layout_index": 0,
+            "active_keymap": "English (US)",
+            "capsLock": false,
+            "numLock": true,
+            "main": false
+        },
+        {
+            "address": "0x5600000000c0",
+            "name": "video-bus",
+            "rules": "",
+            "model": "",
+            "layout": "us,de",
+            "variant": "",
+            "options": "grp:win_space_toggle",
+            "active_layout_index": 0,
+            "active_keymap": "English (US)",
+            "capsLock": false,
+            "numLock": true,
+            "main": false
+        },
+        {
+            "address": "0x5600000000d0",
+            "name": "power-button",
+            "rules": "",
+            "model": "",
+            "layout": "us,de",
+            "variant": "",
+            "options": "grp:win_space_toggle",
+            "active_layout_index": 0,
+            "active_keymap": "English (US)",
+            "capsLock": false,
+            "numLock": true,
+            "main": false
+        },
+        {
+            "address": "0x5600000000e0",
+            "name": "power-button-1",
+            "rules": "",
+            "model": "",
+            "layout": "us,de",
+            "variant": "",
+            "options": "grp:win_space_toggle",
+            "active_layout_index": 0,
+            "active_keymap": "English (US)",
+            "capsLock": false,
+            "numLock": true,
+            "main": false
+        }
+    ],
+    "tablets": [],
+    "touch": [],
+    "switches": []
+}

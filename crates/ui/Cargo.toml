@@ -1,0 +1,30 @@
+[package]
+name = "deskshell-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+iced = { workspace = true, features = ["image-without-codecs"] }
+image.workspace = true
+iced_exwlshell.workspace = true
+resvg = { version = "0.45.1", default-features = false }
+rustix = { workspace = true, features = ["event", "fs"] }
+toml.workspace = true
+tracing.workspace = true
+unicode-segmentation = "1.13.3"
+wayland-client.workspace = true
+wayland-protocols-hyprland.workspace = true
+
+[dev-dependencies]
+iced_test.workspace = true
+
+[[test]]
+name = "offscreen"
+harness = false
+
+[lints]
+workspace = true

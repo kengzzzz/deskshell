@@ -1,0 +1,21 @@
+# /etc/deskshell/greeter.toml. Without users, the greeter lists the users in
+# /etc/Yubico/u2f_mappings in file order.
+users = ["alice"]
+# Optional. A PNG or JPEG drawn blurred behind the greeter. It must be readable by the
+# greeter user. Without it the background is plain.
+# wallpaper = "/usr/share/deskshell/greeter-wallpaper.png"
+
+[session]
+name = "Hyprland"
+# greetd joins the words with spaces and runs them through /bin/sh -c, so they are not
+# quoted for you.
+# `deskshell session` starts Hyprland as a user unit.
+command = ["systemd-cat", "--identifier=deskshell-session", "--", "deskshell", "session"]
+# XDG_SESSION_TYPE=wayland makes logind's session a display session, which the polkit
+# agent falls back to.
+env = [
+    "XDG_SESSION_TYPE=wayland",
+    "XDG_SESSION_DESKTOP=Hyprland",
+    "XDG_CURRENT_DESKTOP=Hyprland",
+    "DESKTOP_SESSION=hyprland",
+]

@@ -1,0 +1,25 @@
+{
+"lua": [
+["","[[]]"],
+["a b","[[a b]]"],
+["x]]y","[=[x]]y]=]"],
+["x]","[=[x]]=]"],
+["x]=","[[x]=]]"],
+["]]]=]","[==[]]]=]]==]"],
+["[[ok","[[[[ok]]"],
+["]=]]==]","[===[]=]]==]]===]"],
+["a]==]b]=]c]]","[===[a]==]b]=]c]]]===]"],
+["ไทย ]] 😀","[=[ไทย ]] 😀]=]"],
+["'quoted' \"double\"","[['quoted' \"double\"]]"],
+["line\nbreak","[[line\nbreak]]"]
+],
+"launch": [
+[["uwsm-app","--","kitty"],"",null,"hl.dsp.exec_cmd([['uwsm-app' '--' 'kitty']], { float = true, center = true, size = [[monitor_h*1.1 monitor_h*0.75]] })"],
+[["uwsm-app","--","it's here"],"/home/user/My Dir",null,"hl.dsp.exec_cmd([[cd '/home/user/My Dir' && 'uwsm-app' '--' 'it'\\''s here']], { float = true, center = true, size = [[monitor_h*1.1 monitor_h*0.75]] })"],
+[["uwsm-app","--","/opt/runner/bin/run","game"],"",["Game","game.desktop"],"tenant_float_launch([['uwsm-app' '--' '/opt/runner/bin/run' 'game']], { [[Game]], [[game.desktop]] }, [[monitor_h*1.1 monitor_h*0.75]])"],
+[["a"],"",[],"hl.dsp.exec_cmd([['a']], { float = true, center = true, size = [[monitor_h*1.1 monitor_h*0.75]] })"],
+[[],"",null,"hl.dsp.exec_cmd([[]], { float = true, center = true, size = [[monitor_h*1.1 monitor_h*0.75]] })"],
+[["x]]y","ไทย"],"/tmp/'q'",["]]"],"tenant_float_launch([=[cd '/tmp/'\\''q'\\''' && 'x]]y' 'ไทย']=], { [=[]]]=] }, [[monitor_h*1.1 monitor_h*0.75]])"],
+[["sh","-c","echo 'a' && echo \"b\""],"",null,"hl.dsp.exec_cmd([['sh' '-c' 'echo '\\''a'\\'' && echo \"b\"']], { float = true, center = true, size = [[monitor_h*1.1 monitor_h*0.75]] })"]
+]
+}

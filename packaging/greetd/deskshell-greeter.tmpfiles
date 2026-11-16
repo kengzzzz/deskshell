@@ -1,0 +1,6 @@
+# /etc/tmpfiles.d/deskshell-greeter.conf
+# The cache holds the last user. The ACL lets the greeter read every tally in
+# /run/faillock, including the ones pam_faillock creates later, because the greeter user
+# cannot run faillock, which opens the tally read-write.
+d /var/cache/deskshell-greeter 0750 greeter greeter -
+a+ /run/faillock - - - - u:greeter:rx,d:u:greeter:r,d:g::rw

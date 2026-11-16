@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# as-tester CMD [ARG...]: run a command as tester inside the running Hyprland session.
+set -euo pipefail
+uid=$(id -u tester)
+run=/run/user/$uid
+sig=$(ls -t "$run/hypr" 2>/dev/null | head -1 || true)
+wl=
+for s in "$run"/wayland-*; do
+    [[ -S $s ]] && { wl=${s##*/}; break; }
+done
+exec setpriv --reuid="$uid" --regid="$uid" --init-groups \
+    env -i HOME=/home/tester USER=tester LOGNAME=tester SHELL=/bin/bash \
+    PATH=/usr/local/bin:/usr/bin LANG=C.UTF-8 TERM="${TERM:-dumb}" \
+    XDG_RUNTIME_DIR="$run" XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=Hyprland \
+    WAYLAND_DISPLAY="$wl" HYPRLAND_INSTANCE_SIGNATURE="$sig" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$run/bus" NODEVICE_SELECT=1 \
+    "$@"

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Background Helper
+Exec=helper
+NoDisplay=true
+StartupWMClass=helper-window

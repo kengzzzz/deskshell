@@ -1,0 +1,38 @@
+# The GPG touch detector: it proxies gpg-agent's socket and serves GPG touch waits to the
+# shell on $XDG_RUNTIME_DIR/deskshell-gpg.sock.
+#
+# It gives gpg-agent's socket a second name, S.gpg-agent.deskshell-gpg, as a hard link,
+# then renames its own socket over S.gpg-agent. So S.gpg-agent is never missing and never
+# unlinked, because gpg-agent shuts down when it sees that name deleted.
+#
+# Fail open: ExecStopPost runs after every exit, a crash included. When the agent answers
+# at the backend name and S.gpg-agent does not, --restore renames the agent's socket back.
+# So gpg works between a crash and the restart, and keeps working if restarts hit the start
+# limit. The next start takes over again.
+#
+# gpg-agent checks its own socket every 60 s and exits when the check fails. Through the
+# proxy the check reaches the agent itself. A proxy that stays down past a check costs the
+# agent process and its caches, so the restart comes fast.
+#
+# Exit status 2 (usage error), 3 (yubikey-touch-detector proxies the agent) and 4 (no card
+# key) do not restart. After adding a card key, start the unit again.
+#
+# Enable it only at the swap, in the same step that disables yubikey-touch-detector. It is
+# not PartOf the graphical session, so gpg works the same outside Hyprland.
+
+[Unit]
+Description=deskshell GPG touch detector
+After=gpg-agent.socket
+
+[Service]
+ExecStart=/usr/bin/deskshell-gpg
+ExecStopPost=/usr/bin/deskshell-gpg --restore
+Restart=always
+RestartSec=200ms
+RestartPreventExitStatus=2 3 4
+# Replies carry session keys and loopback passphrases, so it writes no core dumps. It also
+# sets the limit itself, which covers runs outside the unit.
+LimitCORE=0
+
+[Install]
+WantedBy=default.target

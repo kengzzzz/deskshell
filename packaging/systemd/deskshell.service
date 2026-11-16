@@ -1,0 +1,24 @@
+# A stop sends SIGTERM, which runs the exit path: the polkit agent unregisters, the
+# notification history is written, and the children the shell owns end. Apps the shell
+# launched stay alive across restarts (KillMode=process).
+#
+# No LimitCORE=0, unlike the lock and deskshell-gpg: resource limits pass to every app the
+# shell launches, and a hard limit of 0 cannot be raised again.
+
+[Unit]
+Description=deskshell desktop shell
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/deskshell
+Restart=always
+RestartSec=1
+KillMode=process
+Slice=session.slice
+
+[Install]
+WantedBy=graphical-session.target

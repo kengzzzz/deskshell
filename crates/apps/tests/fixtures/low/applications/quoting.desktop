@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Quoting
+Exec="/opt/my app/bin/run" --title "two words" --file=%f %U 100%%

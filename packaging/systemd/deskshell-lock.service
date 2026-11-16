@@ -1,0 +1,67 @@
+# The session lock, started per lock: `deskshell lock` and `deskshell ipc lock lock` start
+# deskshell-lock.service and wait for the start job. A start while it runs does nothing, so a
+# second lock request can never unlock.
+#
+# Type=notify: the lock sends READY=1 once the compositor confirms the lock, so `start`
+# returns only then. Before it unlocks, it sends STOPPING=1 and then BARRIER=1 with a
+# pipe, and waits up to 1 s for systemd to close the pipe, which proves systemd processed
+# the stop. So the unit is active only while the session is locked. After the unlock the
+# process may still restore the keyboard layout for up to about a second, with the unit
+# deactivating, and a `start` then waits for that exit and brings up a new lock. If the
+# stop is not confirmed, the lock does not unlock: it exits with status 6, the session
+# stays locked, and Restart=on-failure brings up a new lock that asks for the PIN again.
+#
+# Crashes: a killed or crashed lock leaves the session locked (Hyprland shows its
+# "lockscreen app died" view, with misc:allow_session_lock_restore = true), and
+# Restart=on-failure starts a new lock, which takes over. A clean exit after an unlock
+# (status 0) does not restart.
+#
+# If restarts hit the start limit below, the unit fails, the screen stays on Hyprland's
+# "lockscreen app died" view and the session stays locked. Recover from a TTY
+# (Ctrl+Alt+F3, log in as the same user), either way:
+#   systemctl --user reset-failed deskshell-lock.service
+#   systemctl --user start deskshell-lock.service
+# which starts a new lock that takes over, or, to drop the lock without a locker:
+#   systemctl --user stop deskshell-lock.service
+#   systemctl --user reset-failed deskshell-lock.service
+#   pkill -KILL -x deskshell-lock
+#   sleep 1
+#   hyprctl --instance 0 eval 'hl.clear_crashed_lockscreen()'
+# The stop comes first in every state. A kill alone makes systemd start a new lock, and
+# Hyprland accepts the clear while that lock is not yet confirmed, so a later restart
+# locks the session again. Hyprland's lock-died screen gives that kill-and-clear advice.
+# Without reset-failed, a start within the start limit window below is refused.
+
+[Unit]
+Description=deskshell session lock
+PartOf=graphical-session.target
+After=graphical-session.target
+# A crash loop restarts about every 0.3 s and hits five starts within 10 s at once. A lock
+# that crashes less often keeps being restarted, which keeps the session locked and gives
+# the user a chance to unlock between crashes. In a test guest (systemd 262) fourteen
+# clean lock and unlock cycles within 45 s never hit even a five-in-60-s limit, so
+# ordinary locking does not use it up. Should a systemd count them, a person still can't
+# lock and unlock five times within 10 s, and a refused start would leave the session
+# unlocked.
+StartLimitIntervalSec=10
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/deskshell-lock
+Restart=on-failure
+RestartSec=100ms
+# Usage errors would fail again. Status 4 means the compositor ended a granted lock itself
+# (the protocol's `finished` after `locked`), so the session is already unlocked and a new
+# lock would undo the compositor's choice. Hyprland 0.57 sends that only for a lock whose
+# client is gone, so a running lock should never see it.
+RestartPreventExitStatus=2 4
+# SIGTERM from outside systemd (pkill) is a clean exit for on-failure, but the session is
+# still locked, so restart then too. A stop through systemd never restarts.
+RestartForceExitStatus=SIGTERM SIGINT
+# Hyprland confirms the lock after a frame on every output, or after 5 s.
+TimeoutStartSec=15
+# The lock holds the PIN in memory while the user types it, so it writes no core dumps.
+LimitCORE=0
+Slice=session.slice

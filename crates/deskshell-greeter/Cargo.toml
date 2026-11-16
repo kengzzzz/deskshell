@@ -1,0 +1,32 @@
+[package]
+name = "deskshell-greeter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+deskshell-auth.workspace = true
+deskshell-hypr.workspace = true
+deskshell-ui.workspace = true
+iced = { workspace = true, features = ["image-without-codecs"] }
+iced_exwlshell.workspace = true
+image.workspace = true
+jiff.workspace = true
+rustix = { workspace = true, features = ["process"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "rt", "rt-multi-thread", "sync", "time"] }
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+iced_test.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,22 @@
+# The deskshell session. `deskshell session` starts it once Hyprland's variables are in the
+# manager, and it brings up graphical-session.target, which starts deskshell.service and
+# the other session services.
+#
+# Requisite= in place of BindsTo= on the Hyprland unit: a start of this target must never
+# start Hyprland, which BindsTo= would do like Requires=. When Hyprland is not active, the
+# start fails. Hyprland's PropagatesStopTo= takes this target down, both on a stop and when
+# Hyprland's main process exits on its own (seen in a guest, systemd 262).
+#
+# Before=xdg-desktop-autostart.target keeps systemd from ordering this target after the
+# autostart target it wants. That implicit order makes a cycle with every autostart service,
+# which is ordered after graphical-session.target, and systemd then drops the autostart
+# target's start job.
+
+[Unit]
+Description=deskshell session
+Requisite=deskshell-hyprland.service
+After=deskshell-hyprland.service
+BindsTo=graphical-session.target
+Before=graphical-session.target xdg-desktop-autostart.target
+PropagatesStopTo=graphical-session.target
+Wants=xdg-desktop-autostart.target

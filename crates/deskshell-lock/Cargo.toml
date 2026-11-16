@@ -1,0 +1,28 @@
+[package]
+name = "deskshell-lock"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+deskshell-auth = { workspace = true, features = ["async"] }
+deskshell-hypr.workspace = true
+deskshell-ipc.workspace = true
+deskshell-ui.workspace = true
+iced = { workspace = true, features = ["image-without-codecs"] }
+iced_exwlshell.workspace = true
+image.workspace = true
+jiff.workspace = true
+rustix = { workspace = true, features = ["event", "net", "pipe", "process"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+rustix = { workspace = true, features = ["fs"] }
+
+[lints]
+workspace = true

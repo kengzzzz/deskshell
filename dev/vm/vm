@@ -1,0 +1,439 @@
+#!/usr/bin/env bash
+# Disposable KVM guests for deskshell tests. See README.md.
+set -euo pipefail
+
+here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+dir=${DESKSHELL_VM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/deskshell-vm}
+slots=${DESKSHELL_VM_SLOTS:-6}
+vcpus=${DESKSHELL_VM_CPUS:-2}
+mem=${DESKSHELL_VM_MEM:-3G}
+host_cpus=${DESKSHELL_VM_HOST_CPUS:-8-15,24-31}
+weight=${DESKSHELL_VM_CPU_WEIGHT:-20}
+slot_wait=${DESKSHELL_VM_WAIT:-600}
+boot_timeout=${DESKSHELL_VM_BOOT_TIMEOUT:-120}
+cmdline="root=/dev/vda rw console=ttyS0 loglevel=4"
+ssh_base=(-i "$dir/key" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
+    -o ConnectTimeout=5 -o ServerAliveInterval=15 -o BatchMode=yes)
+
+die() { printf 'vm: %s\n' "$*" >&2; exit 1; }
+note() { printf 'vm: %s\n' "$*" >&2; }
+
+((slots >= 1 && slots <= 6)) || die "DESKSHELL_VM_SLOTS must be 1 to 6"
+
+usage() {
+    cat <<'EOF'
+usage: vm <command> [args]
+  build-base               rebuild the base image
+  up [--share DIR]         boot a fresh guest, print its slot once Hyprland runs
+  down SLOT                stop the guest and delete its overlay
+  ssh SLOT [CMD...]        run a command as root in the guest
+  push SLOT SRC DST        copy a host path into the guest
+  pull SLOT SRC DST        copy a guest path to the host
+  screenshot SLOT OUT.png  grim in the guest, copied back
+  key SLOT KEY...          press keys through QMP, e.g. ctrl-alt-t ret
+  type SLOT TEXT           type text through QMP
+  hid SLOT plug|unplug     fake YubiKey present or absent
+  log SLOT                 serial console, journal and Hyprland log
+  list                     slots in use
+  gc                       stop guests whose owner is gone
+EOF
+}
+
+slot_dir() { printf '%s/slots/%s' "$dir" "$1"; }
+ssh_port() { echo $((22200 + $1)); }
+vnc_port() { echo $((5900 + $1)); }
+
+check_slot() {
+    [[ $1 =~ ^[0-9]+$ ]] && (($1 >= 1 && $1 <= slots)) || die "bad slot: $1"
+}
+
+# Field 22 of /proc/PID/stat is the start time, which tells a reused pid apart.
+start_time() {
+    local stat f
+    stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+    read -ra f <<< "${stat##*) }"
+    echo "${f[19]}"
+}
+
+alive() {
+    local pid=$1 start=${2:-}
+    kill -0 "$pid" 2>/dev/null || return 1
+    [[ -z $start || $(start_time "$pid") == "$start" ]]
+}
+
+# The guest's QEMU holds the slot lock, so a slot is busy exactly while flock fails.
+slot_busy() {
+    local lock
+    lock=$(slot_dir "$1")/lock
+    [[ -e $lock ]] || return 1
+    ! flock -n "$lock" true
+}
+
+# A second lock, ctl, serializes changes to a slot's files between up, down and gc.
+# QEMU never inherits it.
+ctl_fd=''
+ctl_lock() {
+    exec {ctl_fd}> "$(slot_dir "$1")/ctl"
+    if [[ ${2:-} == try ]]; then
+        flock -n "$ctl_fd" && return 0
+    else
+        flock -w 60 "$ctl_fd" && return 0
+    fi
+    exec {ctl_fd}>&-
+    ctl_fd=''
+    return 1
+}
+
+ctl_unlock() {
+    [[ -n $ctl_fd ]] || return 0
+    exec {ctl_fd}>&-
+    ctl_fd=''
+}
+
+qemu_pid() {
+    local sd pid
+    sd=$(slot_dir "$1")
+    pid=$(cat "$sd/qemu.pid" 2>/dev/null) || return 1
+    [[ $pid =~ ^[0-9]+$ ]] || return 1
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q -- "-name deskshell-vm-$1 " || return 1
+    echo "$pid"
+}
+
+# The owner is the nearest ancestor that is not a shell or wrapper, so a guest outlives the
+# single shell an agent's tool call runs in. DESKSHELL_VM_OWNER overrides it.
+owner_pid() {
+    if [[ -n ${DESKSHELL_VM_OWNER:-} ]]; then
+        echo "$DESKSHELL_VM_OWNER"
+        return
+    fi
+    local pid=$PPID comm stat f
+    while ((pid > 1)); do
+        comm=$(cat "/proc/$pid/comm" 2>/dev/null) || break
+        case $comm in
+            bash | zsh | sh | dash | fish | env | timeout | setsid | nohup | flock | xargs | time) ;;
+            *) break ;;
+        esac
+        stat=$(cat "/proc/$pid/stat")
+        read -ra f <<< "${stat##*) }"
+        pid=${f[1]}
+    done
+    echo "$pid"
+}
+
+guest_ssh() {
+    local slot=$1
+    shift
+    ssh ${ssh_extra[@]+"${ssh_extra[@]}"} "${ssh_base[@]}" -p "$(ssh_port "$slot")" root@127.0.0.1 "$@"
+}
+
+need_running() {
+    check_slot "$1"
+    slot_busy "$1" || die "slot $1 is not running"
+}
+
+build_base() {
+    command -v docker > /dev/null || die "docker not found"
+    local build=$dir/build ctx=$dir/build/ctx start=$SECONDS
+    mkdir -p "$build"
+    [[ -f $dir/key ]] || ssh-keygen -q -t ed25519 -N '' -C deskshell-vm -f "$dir/key"
+    rm -rf "$ctx"
+    mkdir -p "$ctx"
+    cp -r "$here/image/." "$here/pam-fakeu2f" "$here/fakehid" "$ctx/"
+    cp "$dir/key.pub" "$ctx/key.pub"
+
+    # A new SYNC_STAMP reruns pacman -Syu on every build, so the guest glibc is never older than the repos.
+    local raw=$build/root.img
+    rm -f "$raw"
+    docker build --build-arg "SYNC_STAMP=$(date +%s)" --output type=tar,dest=- "$ctx" \
+        | mkfs.ext4 -q -L root -d - "$raw" 10G || die "docker build or rootfs export failed"
+    debugfs -R "dump /boot/vmlinuz-linux $build/vmlinuz" "$raw" 2> /dev/null
+    debugfs -R "dump /boot/initramfs-linux.img $build/initramfs.img" "$raw" 2> /dev/null
+    [[ -s $build/vmlinuz && -s $build/initramfs.img ]] || die "kernel or initramfs missing in the image"
+    rm -f "$build/base.qcow2"
+    qemu-img convert -O qcow2 "$raw" "$build/base.qcow2"
+    chmod 0444 "$build/base.qcow2"
+
+    local versions
+    versions=$(debugfs -R "ls /var/lib/pacman/local" "$raw" 2> /dev/null | tr -s ' ' '\n' \
+        | sed -nE 's/^(glibc|linux|hyprland|aquamarine|mesa)-([0-9].*)$/\1 \2/p' | sort)
+    mv -f "$build/vmlinuz" "$dir/vmlinuz"
+    mv -f "$build/initramfs.img" "$dir/initramfs.img"
+    mv -f "$build/base.qcow2" "$dir/base.qcow2"
+    rm -rf "$ctx" "$raw"
+    {
+        echo "built $(date -Iseconds) in $((SECONDS - start)) s"
+        echo "$versions"
+    } > "$dir/base.info"
+    cat "$dir/base.info" >&2
+
+    if command -v pacman > /dev/null; then
+        local host guest
+        host=$(pacman -Q glibc | cut -d' ' -f2)
+        guest=$(grep '^glibc ' <<< "$versions" | cut -d' ' -f2)
+        (($(vercmp "$guest" "$host") >= 0)) || note "warning: guest glibc $guest is older than host glibc $host"
+    fi
+}
+
+launch_qemu() {
+    local slot=$1 share=$2 sd
+    sd=$(slot_dir "$slot")
+    local qemu=(
+        qemu-system-x86_64 -name "deskshell-vm-$slot" -machine q35,accel=kvm,i8042=off,vmport=off -cpu host
+        -smp "$vcpus" -m "$mem" -nodefaults -no-user-config -display none
+        -kernel "$dir/vmlinuz" -initrd "$dir/initramfs.img" -append "$cmdline"
+        -drive "file=$sd/overlay.qcow2,if=virtio,format=qcow2,cache=unsafe,discard=unmap"
+        -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$(ssh_port "$slot")-:22,hostfwd=tcp:127.0.0.1:$(vnc_port "$slot")-:5900"
+        -device virtio-net-pci,netdev=n0
+        -device virtio-rng-pci -device virtio-keyboard-pci -device virtio-tablet-pci
+        -serial "file:$sd/serial.log" -qmp "unix:$sd/qmp,server=on,wait=off"
+        -pidfile "$sd/qemu.pid" -daemonize
+    )
+    [[ -n $share ]] && qemu+=(-virtfs "local,path=$share,mount_tag=work,security_model=none,readonly=on")
+    # QEMU inherits the lock fd and keeps the slot locked until it exits.
+    systemd-run --user --scope --quiet --collect --unit="deskshell-vm-$slot-$$" \
+        -p CPUWeight="$weight" -p AllowedCPUs="$host_cpus" \
+        taskset -c "$host_cpus" "${qemu[@]}" {ctl_fd}>&-
+}
+
+stop_slot() {
+    local slot=$1 sd pid
+    sd=$(slot_dir "$slot")
+    if pid=$(qemu_pid "$slot"); then
+        kill -TERM "$pid" 2>/dev/null || true
+        for _ in $(seq 50); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.1
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" 2>/dev/null || true
+            for _ in $(seq 50); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.1
+            done
+        fi
+    fi
+    rm -f "$sd/overlay.qcow2" "$sd/qemu.pid" "$sd/qmp" "$sd/owner" "$sd/share"
+}
+
+abort_up() {
+    [[ -n $ctl_fd ]] || ctl_lock "$1" || true
+    stop_slot "$1"
+    ctl_unlock
+}
+
+cmd_up() {
+    local share=''
+    while (($#)); do
+        case $1 in
+            --share)
+                [[ $# -ge 2 ]] || die "--share needs a directory"
+                share=$(cd -- "$2" && pwd) || die "no such directory: $2"
+                shift 2
+                ;;
+            *) die "unknown option: $1" ;;
+        esac
+    done
+    [[ -f $dir/base.qcow2 ]] || die "no base image, run: vm build-base"
+    gc_slots quiet
+
+    local owner owner_start
+    owner=$(owner_pid)
+    owner_start=$(start_time "$owner") || die "owner $owner is not running"
+
+    local slot='' lockfd deadline=$((SECONDS + slot_wait)) waited=''
+    while [[ -z $slot ]]; do
+        for k in $(seq "$slots"); do
+            mkdir -p "$(slot_dir "$k")"
+            exec {lockfd}> "$(slot_dir "$k")/lock"
+            if flock -n "$lockfd"; then
+                slot=$k
+                break
+            fi
+            exec {lockfd}>&-
+        done
+        [[ -n $slot ]] && break
+        ((SECONDS < deadline)) || die "all $slots slots busy for ${slot_wait} s"
+        [[ -n $waited ]] || note "all slots busy, waiting up to ${slot_wait} s"
+        waited=1
+        sleep 2
+    done
+
+    local sd t0=$SECONDS
+    sd=$(slot_dir "$slot")
+    (($(printf '%s' "$sd/qmp" | wc -c) < 100)) || die "slot path too long for a socket: $sd"
+    ctl_lock "$slot" || die "slot $slot is busy changing state"
+    trap "abort_up $slot" EXIT
+    trap 'exit 1' INT TERM HUP
+    stop_slot "$slot"
+    : > "$sd/serial.log"
+    echo "$owner $owner_start" > "$sd/owner"
+    [[ -n $share ]] && echo "$share" > "$sd/share"
+    qemu-img create -q -f qcow2 -b "$dir/base.qcow2" -F qcow2 "$sd/overlay.qcow2"
+    launch_qemu "$slot" "$share" || die "qemu failed to start"
+    exec {lockfd}>&-
+    ctl_unlock
+
+    local pid start_ns monitor='' ssh_extra=(-o ConnectTimeout=2)
+    pid=$(qemu_pid "$slot") || die "qemu did not write its pidfile"
+    start_ns=$(date +%s%N)
+    while :; do
+        kill -0 "$pid" 2>/dev/null || die "qemu exited during boot, see $sd/serial.log"
+        if monitor=$(guest_ssh "$slot" wait-hyprland 5 2>/dev/null); then
+            break
+        fi
+        ((SECONDS - t0 < boot_timeout)) || die "guest not ready after ${boot_timeout} s, see $sd/serial.log"
+        sleep 0.5
+    done
+    local ms=$((($(date +%s%N) - start_ns) / 1000000))
+    ssh_extra=()
+    if [[ -n $share ]]; then
+        guest_ssh "$slot" 'mkdir -p /work && mount -t 9p -o trans=virtio,version=9p2000.L,msize=1048576,ro work /work' \
+            || die "mounting the share failed"
+    fi
+    trap - EXIT INT TERM HUP
+    note "slot $slot ready in $((ms / 1000)).$(printf '%03d' $((ms % 1000))) s on $monitor (ssh 127.0.0.1:$(ssh_port "$slot"), vnc 127.0.0.1:$(vnc_port "$slot"))"
+    echo "$slot"
+}
+
+cmd_down() {
+    [[ $# -eq 1 ]] || die "usage: vm down SLOT"
+    check_slot "$1"
+    ctl_lock "$1" || die "slot $1 is busy changing state"
+    stop_slot "$1"
+    ctl_unlock
+    slot_busy "$1" && die "slot $1 is still locked"
+    return 0
+}
+
+cmd_ssh() {
+    [[ $# -ge 1 ]] || die "usage: vm ssh SLOT [CMD...]"
+    local slot=$1
+    shift
+    need_running "$slot"
+    if (($# == 0)) && [[ -t 0 ]]; then
+        guest_ssh "$slot" -t
+    else
+        guest_ssh "$slot" "$@"
+    fi
+}
+
+cmd_copy() {
+    local dirn=$1
+    shift
+    [[ $# -eq 3 ]] || die "usage: vm $dirn SLOT SRC DST"
+    local slot=$1 src=$2 dst=$3
+    need_running "$slot"
+    if [[ $dirn == push ]]; then
+        scp -q -r "${ssh_base[@]}" -P "$(ssh_port "$slot")" "$src" "root@127.0.0.1:$dst"
+    else
+        scp -q -r "${ssh_base[@]}" -P "$(ssh_port "$slot")" "root@127.0.0.1:$src" "$dst"
+    fi
+}
+
+cmd_screenshot() {
+    [[ $# -eq 2 ]] || die "usage: vm screenshot SLOT OUT.png"
+    need_running "$1"
+    local tmp=$2.tmp
+    guest_ssh "$1" as-tester grim -t png - > "$tmp" || { rm -f "$tmp"; die "grim failed"; }
+    [[ $(head -c 4 "$tmp" | od -An -tx1 | tr -d ' ') == 89504e47 ]] || { rm -f "$tmp"; die "not a PNG"; }
+    mv -f "$tmp" "$2"
+}
+
+cmd_input() {
+    local mode=$1
+    shift
+    [[ $# -ge 2 ]] || die "usage: vm $mode SLOT ..."
+    local slot=$1
+    shift
+    need_running "$slot"
+    python3 -I "$here/qmp.py" "$(slot_dir "$slot")/qmp" "$mode" "$@"
+}
+
+cmd_hid() {
+    [[ $# -eq 2 ]] || die "usage: vm hid SLOT plug|unplug"
+    need_running "$1"
+    local probe='grep -qs "^HID_ID=0003:00001050:" /sys/class/hidraw/*/device/uevent'
+    case $2 in
+        plug) guest_ssh "$1" "systemctl start fake-yubikey && for _ in \$(seq 50); do $probe && exit 0; sleep 0.1; done; exit 1" ;;
+        unplug) guest_ssh "$1" "systemctl stop fake-yubikey && for _ in \$(seq 50); do $probe || exit 0; sleep 0.1; done; exit 1" ;;
+        *) die "usage: vm hid SLOT plug|unplug" ;;
+    esac || die "hid $2 did not take effect"
+}
+
+cmd_log() {
+    [[ $# -eq 1 ]] || die "usage: vm log SLOT"
+    check_slot "$1"
+    local sd
+    sd=$(slot_dir "$1")
+    echo "=== serial console"
+    cat "$sd/serial.log" 2>/dev/null || true
+    if slot_busy "$1"; then
+        echo "=== journal"
+        guest_ssh "$1" journalctl -b --no-pager || true
+        echo "=== hyprland.log"
+        guest_ssh "$1" 'cat "$(ls -td /run/user/1000/hypr/*/ | head -1)hyprland.log"' || true
+    fi
+}
+
+cmd_list() {
+    printf '%-5s %-8s %-6s %-6s %-8s %s\n' SLOT PID SSH VNC OWNER SHARE
+    for k in $(seq "$slots"); do
+        slot_busy "$k" || continue
+        local sd pid owner share
+        sd=$(slot_dir "$k")
+        pid=$(qemu_pid "$k" || echo -)
+        owner=$(cut -d' ' -f1 "$sd/owner" 2>/dev/null || echo -)
+        share=$(cat "$sd/share" 2>/dev/null || echo -)
+        printf '%-5s %-8s %-6s %-6s %-8s %s\n' "$k" "$pid" "$(ssh_port "$k")" "$(vnc_port "$k")" "$owner" "$share"
+    done
+}
+
+gc_slots() {
+    local quiet=${1:-}
+    for k in $(seq "$slots"); do
+        local sd owner start fd
+        sd=$(slot_dir "$k")
+        [[ -d $sd ]] || continue
+        if slot_busy "$k"; then
+            ctl_lock "$k" try || continue
+            if read -r owner start < "$sd/owner" 2>/dev/null && ! alive "$owner" "$start" \
+                && qemu_pid "$k" > /dev/null; then
+                [[ -n $quiet ]] || note "slot $k: owner $owner is gone, stopping the guest"
+                stop_slot "$k"
+            fi
+            ctl_unlock
+        elif [[ -e $sd/overlay.qcow2 || -e $sd/qemu.pid ]]; then
+            exec {fd}> "$sd/lock"
+            if flock -n "$fd" && ctl_lock "$k" try; then
+                [[ -n $quiet ]] || note "slot $k: removing leftovers of a dead guest"
+                stop_slot "$k"
+                ctl_unlock
+            fi
+            exec {fd}>&-
+        fi
+    done
+}
+
+main() {
+    (($#)) || { usage >&2; exit 2; }
+    local cmd=$1
+    shift
+    mkdir -p "$dir/slots"
+    case $cmd in
+        build-base) build_base "$@" ;;
+        up) cmd_up "$@" ;;
+        down) cmd_down "$@" ;;
+        ssh) cmd_ssh "$@" ;;
+        push | pull) cmd_copy "$cmd" "$@" ;;
+        screenshot) cmd_screenshot "$@" ;;
+        key | type) cmd_input "$cmd" "$@" ;;
+        hid) cmd_hid "$@" ;;
+        log) cmd_log "$@" ;;
+        list) cmd_list ;;
+        gc) gc_slots ;;
+        -h | --help | help) usage ;;
+        *) usage >&2; exit 2 ;;
+    esac
+}
+
+main "$@"

@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Shared High
+Exec=shared --high

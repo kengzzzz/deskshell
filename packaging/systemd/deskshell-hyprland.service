@@ -1,0 +1,29 @@
+# Hyprland for the deskshell session, which `deskshell session` starts from the greeter in
+# place of uwsm's wayland-wm@.service.
+#
+# Hyprland sends READY=1 itself, which ends the start job. Its variables reach the manager
+# later, at its first frame, so `deskshell session` waits for WAYLAND_DISPLAY and
+# HYPRLAND_INSTANCE_SIGNATURE before it starts deskshell-session.target.
+#
+# A stop goes to the targets first, so the session services stop while Hyprland still runs.
+# ExecStopPost sets the manager's environment back on every exit, a crash included.
+# `deskshell session` writes the seat to session.env, which libseat needs to open the seat
+# through logind.
+
+[Unit]
+Description=Hyprland for the deskshell session
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target
+Before=graphical-session.target deskshell-session.target
+PropagatesStopTo=deskshell-session.target graphical-session.target
+CollectMode=inactive-or-failed
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStart=/usr/bin/start-hyprland
+ExecStopPost=/usr/bin/deskshell session cleanup
+EnvironmentFile=-%t/deskshell/session.env
+Slice=session.slice
+TimeoutStartSec=30
+TimeoutStopSec=10
