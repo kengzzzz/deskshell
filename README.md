@@ -34,6 +34,8 @@ systemctl --user enable --now deskshell.service
 
 The greetd files land in `/usr/share/deskshell/greetd` and stay inactive until you copy them into `/etc`.
 
+Each `v*` tag builds the same package in an Arch container and attaches it to a GitHub release with a `SHA256SUMS` file. The release package is built for Zen 5 (`TARGET_CPU=znver5`) and does not run on older CPUs. `packaging/ci-build.sh` is that build and runs in a local `archlinux:base-devel` container too. Leave `TARGET_CPU` unset for a generic x86-64 build.
+
 ## Configure
 
 Copy `crates/ui/theme.example.toml` to `~/.config/deskshell/theme.toml` and keep only the keys you change. The shell reloads it on save.

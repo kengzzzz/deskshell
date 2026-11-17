@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      # checkout falls back to a tarball without .git when git is missing, and pkgver needs the history.
+      - run: pacman -Syu --noconfirm --needed git github-cli
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag against the crate version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [[ v$version != "$GITHUB_REF_NAME" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match version $version in Cargo.toml" >&2
+            exit 1
+          fi
+
+      - run: packaging/ci-build.sh "$PWD/dist"
+        env:
+          TARGET_CPU: znver5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deskshell
+          path: dist/
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.pkg.tar.zst dist/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --title "deskshell ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag
