@@ -34,7 +34,11 @@ pkgver() {
     cd "$pkgname"
     local version
     version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-    printf '%s.r%s.g%s' "$version" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+    if [[ $(git rev-parse -q --verify "refs/tags/v$version^{commit}") == "$(git rev-parse HEAD)" ]]; then
+        printf '%s' "$version"
+    else
+        printf '%s.r%s.g%s' "$version" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+    fi
 }
 
 prepare() {
