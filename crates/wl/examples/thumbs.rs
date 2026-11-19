@@ -7,7 +7,8 @@
 //! ```
 //!
 //! Options: `--shm`, `--headless-dmabuf [DIR]` (PNGs, no UI), `--poison SECONDS`,
-//! `--stop-after SECONDS`, `--max-fps N`, `--log-every SECONDS`. `THUMBS_LOG=debug` logs more.
+//! `--stop-after SECONDS`, `--stop-submitting SECONDS`, `--max-fps N`, `--log-every SECONDS`.
+//! `THUMBS_LOG=debug` logs more.
 
 use std::fmt::Write as _;
 use std::io::{Read, Write};
@@ -41,6 +42,7 @@ struct Opts {
     headless: Option<PathBuf>,
     poison: Option<Duration>,
     stop_after: Option<Duration>,
+    stop_submitting: Option<Duration>,
     max_fps: u32,
     log_every: Duration,
 }
@@ -51,6 +53,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Opts, String> {
         headless: None,
         poison: None,
         stop_after: None,
+        stop_submitting: None,
         max_fps: 30,
         log_every: Duration::from_secs(2),
     };
@@ -69,6 +72,9 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Opts, String> {
             "--poison" => opts.poison = Some(Duration::from_secs(number(&arg, args.next())?)),
             "--stop-after" => {
                 opts.stop_after = Some(Duration::from_secs(number(&arg, args.next())?));
+            }
+            "--stop-submitting" => {
+                opts.stop_submitting = Some(Duration::from_secs(number(&arg, args.next())?));
             }
             "--max-fps" => opts.max_fps = number(&arg, args.next())?,
             "--log-every" => opts.log_every = Duration::from_secs(number(&arg, args.next())?),
@@ -240,6 +246,9 @@ fn headless(opts: &Opts, dir: &std::path::Path) -> ExitCode {
         .collect();
     info!(windows = targets.len(), "capturing");
     let deadline = Instant::now() + Duration::from_secs(15);
+    let submit_until = opts
+        .stop_submitting
+        .map(|after| Instant::now() + after);
     let mut context = Context::from_waker(Waker::noop());
     while Instant::now() < deadline && targets.iter().any(|target| !target.3) {
         match Pin::new(&mut events).poll_next(&mut context) {
@@ -281,6 +290,11 @@ fn headless(opts: &Opts, dir: &std::path::Path) -> ExitCode {
                     "window gone before its first frame"
                 );
                 targets.retain(|target| target.1 != id);
+            }
+            Poll::Ready(Some(Event::Submit)) => {
+                if submit_until.is_none_or(|until| Instant::now() < until) {
+                    capture.submit();
+                }
             }
             Poll::Ready(Some(other)) => info!(?other, "event"),
             Poll::Ready(None) => break,
@@ -357,6 +371,8 @@ enum Message {
 
 fn redraw_scope(message: &Message) -> Scope {
     match message {
+        // A redraw would bring a new capture frame and another submit.
+        Message::Capture(Event::Submit) => Scope::None,
         Message::Capture(_) | Message::StopAll | Message::Redraw => Scope::All,
         _ => Scope::None,
     }
@@ -379,6 +395,7 @@ struct Thumbs {
     redraws: u32,
     lost_at: Option<Instant>,
     labels: String,
+    submit_until: Option<Instant>,
 }
 
 impl Thumbs {
@@ -393,6 +410,7 @@ impl Thumbs {
             redraws: 0,
             lost_at: None,
             labels: String::new(),
+            submit_until: None,
         };
         let settings = NewLayerShellSettings {
             size: LayerSize::fill_width(PANEL_HEIGHT),
@@ -494,6 +512,9 @@ impl Thumbs {
                 .push(Shown { id, label: format!("output {name}"), frames: 0, gone: false });
         }
         info!(targets = self.shown.len(), "capture started");
+        self.submit_until = Self::opts()
+            .stop_submitting
+            .map(|after| Instant::now() + after);
         self.capture = Some(capture);
         self.stats_at = Instant::now();
         self.rendered = deskshell_wl::rendered_frames();
@@ -503,6 +524,15 @@ impl Thumbs {
     fn event(&mut self, event: Event) {
         match event {
             Event::Frame(_) => {}
+            Event::Submit => {
+                if let Some(capture) = &self.capture
+                    && self
+                        .submit_until
+                        .is_none_or(|until| Instant::now() < until)
+                {
+                    capture.submit();
+                }
+            }
             Event::Gone(id) => {
                 if let Some(shown) = self
                     .shown

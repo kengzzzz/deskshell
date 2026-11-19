@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use iced::wgpu;
 
 use crate::ring::RING;
+use crate::submit::Submissions;
 use crate::{Mode, TargetId};
 
 /// The frame the widget is encoding. Starts at 1 so 0 means "never sampled".
@@ -117,6 +118,7 @@ impl TargetShared {
 #[derive(Default)]
 pub(crate) struct Shared {
     targets: Mutex<Vec<Arc<TargetShared>>>,
+    pub submissions: Submissions,
 }
 
 impl Shared {

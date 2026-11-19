@@ -30,6 +30,7 @@ use wayland_protocols::ext::image_copy_capture::v1::client::ext_image_copy_captu
 use crate::format;
 use crate::memory::ShmMemory;
 
+pub(crate) use plan::MAX_SIDE;
 pub use plan::{Error, Format};
 
 pub const LIMIT: Duration = Duration::from_secs(2);

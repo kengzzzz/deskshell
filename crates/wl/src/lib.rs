@@ -12,6 +12,7 @@ mod modifiers;
 mod ring;
 mod shared;
 pub mod shot;
+mod submit;
 mod vulkan;
 mod widget;
 mod worker;
@@ -62,6 +63,8 @@ pub enum Event {
     /// Every target restarts once the connection is back.
     ConnectionLost,
     ConnectionRestored,
+    /// Call [`Capture::submit`] on the thread that presents.
+    Submit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -211,7 +214,7 @@ impl Capture {
             info!(reason, "captures use shm");
         }
         let context = worker::Context {
-            gpu,
+            gpu: worker::GpuRef::new(gpu),
             commands: receiver,
             wake: Arc::clone(&wake),
             events,
@@ -258,6 +261,14 @@ impl Capture {
         self.dmabuf
     }
 
+    /// Only on the thread that presents: wgpu's surface teardown calls `vkDeviceWaitIdle`
+    /// without the lock that guards a submit.
+    pub fn submit(&self) {
+        self.shared
+            .submissions
+            .submit(&self.queue);
+    }
+
     pub fn mode(&self, id: TargetId) -> Option<Mode> {
         self.shared.get(id)?.mode()
     }
@@ -275,7 +286,7 @@ impl Capture {
         self.send(Command::Poison);
     }
 
-    /// Blocks until the copy is done.
+    /// Blocks until the copy is done. Only on the thread that presents.
     pub fn read_frame(&self, id: TargetId) -> Option<Image> {
         let target = self.shared.get(id)?;
         let (slot, texture, flip_y, opaque) = {

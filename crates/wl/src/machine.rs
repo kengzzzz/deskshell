@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use crate::Mode;
 use crate::format;
 use crate::ring::{Pick, Ring, Slot};
+use crate::shot::MAX_SIDE;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Offer {
@@ -294,7 +295,7 @@ impl Machine {
 
 /// dmabuf wins when allowed and possible. Windows prefer formats with alpha, outputs opaque ones.
 pub(crate) fn choose(offer: &Offer, prefer_opaque: bool, dmabuf: bool) -> Option<Plan> {
-    if offer.width == 0 || offer.height == 0 {
+    if offer.width == 0 || offer.height == 0 || offer.width > MAX_SIDE || offer.height > MAX_SIDE {
         return None;
     }
     let usable = || {
@@ -342,6 +343,21 @@ mod tests {
                 OfferFormat { fourcc: XRGB8888, shm: true, modifiers: modifiers.to_vec() },
             ],
         }
+    }
+
+    #[test]
+    fn empty_and_huge_offers_get_no_plan() {
+        for (width, height) in [(0, 10), (10, 0), (MAX_SIDE + 1, 10), (10, u32::MAX)] {
+            assert_eq!(
+                choose(&offer(width, height, &[1]), false, true),
+                None
+            );
+            assert_eq!(
+                choose(&offer(width, height, &[]), false, false),
+                None
+            );
+        }
+        assert!(choose(&offer(MAX_SIDE, MAX_SIDE, &[]), false, false).is_some());
     }
 
     fn drain(machine: &mut Machine, now: Instant) -> Vec<Action> {

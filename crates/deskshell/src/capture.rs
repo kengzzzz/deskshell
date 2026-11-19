@@ -141,6 +141,11 @@ impl Captures {
                     None => {}
                 }
             }
+            Event::Submit => {
+                if let Some(capture) = &self.capture {
+                    capture.submit();
+                }
+            }
             Event::ConnectionLost => info!("capture connection lost, targets restart"),
             Event::ConnectionRestored => info!("capture connection restored"),
             Event::Frame(_) => {}

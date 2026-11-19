@@ -53,7 +53,7 @@ use wayland_protocols_hyprland::toplevel_mapping::v1::client::hyprland_toplevel_
 };
 
 use crate::backoff::Backoff;
-use crate::compare::Comparer;
+use crate::compare::{Answer, Begin, Comparer, Gate, Readback};
 use crate::feedback::{self, Feedback};
 use crate::format::{self, ARGB8888, BYTES_PER_PIXEL, Fourcc};
 use crate::machine::{Action, Failure, Machine, Offer, OfferFormat};
@@ -61,6 +61,7 @@ use crate::memory::{self, ShmMemory};
 use crate::modifiers;
 use crate::ring::{RING, Slot};
 use crate::shared::{Shared, SlotView, TargetShared};
+use crate::submit::{Done, Job, Posted, Progress, Submissions, Then, Uploads};
 use crate::vulkan::DmabufDevice;
 use crate::{Event, Gpu, Mode, Target, TargetId};
 
@@ -72,7 +73,7 @@ pub(crate) enum Command {
 }
 
 pub(crate) struct Context {
-    pub gpu: Gpu,
+    pub gpu: GpuRef,
     pub commands: mpsc::Receiver<Command>,
     pub wake: Arc<OwnedFd>,
     pub events: UnboundedSender<Event>,
@@ -98,6 +99,11 @@ const KEY_FENCE: u64 = 2;
 const FENCE_TIMEOUT: Duration = Duration::from_secs(1);
 const RESTART_FIRST: Duration = Duration::from_millis(500);
 const RESTART_MAX: Duration = Duration::from_secs(5);
+/// wgpu runs completion callbacks only while someone polls the device.
+const GPU_POLL: Duration = Duration::from_millis(8);
+const GPU_POLL_STALLED: Duration = Duration::from_millis(100);
+const GPU_FAST_FOR: Duration = Duration::from_secs(1);
+const INIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn fence_key(id: TargetId, slot: usize) -> u64 {
     KEY_FENCE + id.0 * RING as u64 + slot as u64
@@ -379,8 +385,18 @@ enum Backing {
     Dmabuf { fd: OwnedFd },
 }
 
+struct Init {
+    done: Arc<Done>,
+    params: ZwpLinuxBufferParamsV1,
+    width: i32,
+    height: i32,
+    fourcc: u32,
+    posted: Instant,
+}
+
 struct Buffer {
     wl: Option<WlBuffer>,
+    init: Option<Init>,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     backing: Backing,
@@ -390,6 +406,10 @@ impl Drop for Buffer {
     fn drop(&mut self) {
         if let Some(buffer) = self.wl.take() {
             buffer.destroy();
+        }
+        if let Some(init) = self.init.take() {
+            init.done.cancel();
+            init.params.destroy();
         }
         if let Backing::Shm { pool, .. } = &self.backing {
             pool.destroy();
@@ -417,6 +437,10 @@ struct Live {
     output_global: Option<u32>,
     /// Indexed by the shown slot and the new one.
     compare: [[Option<wgpu::BindGroup>; RING]; RING],
+    gate: Gate,
+    readback: Option<Readback>,
+    comparing: Option<Arc<Done>>,
+    compare_late: bool,
 }
 
 impl Live {
@@ -434,6 +458,12 @@ impl Live {
         self.buffers = Default::default();
         self.compare = Default::default();
         self.fences = Default::default();
+        self.gate.clear();
+        if let Some(done) = self.comparing.take() {
+            done.cancel();
+            // A late map would leave it mapped for the next pass.
+            self.readback = None;
+        }
         self.generation += 1;
         let mut view = self.shared.view();
         let shown = view.shown;
@@ -460,10 +490,17 @@ impl Drop for Live {
     }
 }
 
-struct GpuRef {
+#[derive(Clone)]
+pub(crate) struct GpuRef {
     device: wgpu::Device,
-    queue: wgpu::Queue,
+    uploads: Uploads,
     dmabuf: Option<Arc<DmabufDevice>>,
+}
+
+impl GpuRef {
+    pub fn new(gpu: Gpu) -> Self {
+        Self { device: gpu.device, uploads: Uploads::new(gpu.queue), dmabuf: gpu.dmabuf.ok() }
+    }
 }
 
 pub(crate) struct State {
@@ -484,6 +521,8 @@ pub(crate) struct State {
     gpu: GpuRef,
     events: UnboundedSender<Event>,
     shared: Arc<Shared>,
+    wake: Arc<OwnedFd>,
+    last_gpu_poll: Option<Instant>,
     epoll: OwnedFd,
     driver: Vec<u64>,
     usable: Vec<u64>,
@@ -559,18 +598,11 @@ impl State {
             mappings_pending: 0,
             live: Vec::new(),
             gone: Vec::new(),
-            gpu: GpuRef {
-                device: context.gpu.device.clone(),
-                queue: context.gpu.queue.clone(),
-                dmabuf: context
-                    .gpu
-                    .dmabuf
-                    .as_ref()
-                    .ok()
-                    .cloned(),
-            },
+            gpu: context.gpu.clone(),
             events: context.events.clone(),
             shared: Arc::clone(&context.shared),
+            wake: Arc::clone(&context.wake),
+            last_gpu_poll: None,
             epoll,
             driver: Vec::with_capacity(16),
             usable: Vec::with_capacity(16),
@@ -630,6 +662,10 @@ impl State {
             flip_y: false,
             output_global: None,
             compare: Default::default(),
+            gate: Gate::default(),
+            readback: None,
+            comparing: None,
+            compare_late: false,
         });
         self.dirty = true;
     }
@@ -775,11 +811,25 @@ impl State {
             self.dirty = false;
             self.begin_waiting(now);
         }
+        if let Some(every) = self.gpu_pending(now)
+            && (self.gpu_deadline_passed(now)
+                || self
+                    .last_gpu_poll
+                    .is_none_or(|last| now >= last + every))
+        {
+            self.last_gpu_poll = Some(now);
+            let _ = self
+                .gpu
+                .device
+                .poll(wgpu::PollType::Poll);
+        }
         let (lives, mut env) = self.split();
         for live in lives.iter_mut() {
             if live.phase != Phase::Running {
                 continue;
             }
+            hand_over_inits(live, now);
+            settle_compare(live, &mut env, now);
             for slot in 0..RING {
                 if let Some((_, started)) = &live.fences[slot]
                     && now.duration_since(*started) >= FENCE_TIMEOUT
@@ -789,20 +839,59 @@ impl State {
                         slot, "dmabuf fence did not signal in time, showing the frame anyway"
                     );
                     live.fences[slot] = None;
-                    env.complete_dmabuf(live, slot);
+                    env.complete_dmabuf(live, slot, now);
                 }
             }
             loop {
                 let held = live.shared.view().held();
+                let gate = &live.gate;
                 let Some(action) = live
                     .machine
-                    .next(now, |slot| held[slot])
+                    .next(now, |slot| held[slot] || gate.held(slot))
                 else {
                     break;
                 };
                 env.execute(live, action, now);
             }
         }
+    }
+
+    fn gpu_deadline_passed(&self, now: Instant) -> bool {
+        self.live.iter().any(|live| {
+            live.gate
+                .deadline()
+                .is_some_and(|at| now >= at)
+                || live
+                    .buffers
+                    .iter()
+                    .flatten()
+                    .filter_map(|buffer| buffer.init.as_ref())
+                    .any(|init| now.saturating_duration_since(init.posted) >= INIT_TIMEOUT)
+        })
+    }
+
+    fn gpu_pending(&self, now: Instant) -> Option<Duration> {
+        let mut pending = None;
+        for live in &self.live {
+            if live.gate.deadline().is_some() {
+                return Some(GPU_POLL);
+            }
+            if live.comparing.is_some() {
+                pending = Some(GPU_POLL_STALLED);
+            }
+            for init in live
+                .buffers
+                .iter()
+                .flatten()
+                .filter_map(|buffer| buffer.init.as_ref())
+            {
+                if now.saturating_duration_since(init.posted) < GPU_FAST_FOR {
+                    return Some(GPU_POLL);
+                }
+                pending = Some(GPU_POLL_STALLED);
+            }
+        }
+        pending
     }
 
     fn split(&mut self) -> (&mut Vec<Live>, Env<'_>) {
@@ -813,6 +902,8 @@ impl State {
             dmabuf,
             gpu,
             events,
+            shared,
+            wake,
             epoll,
             staging,
             comparer,
@@ -825,6 +916,8 @@ impl State {
             dmabuf: dmabuf.as_ref(),
             gpu,
             events,
+            submissions: &shared.submissions,
+            wake,
             epoll,
             staging,
             comparer,
@@ -845,12 +938,21 @@ impl State {
                     if let Some(at) = live.machine.deadline(now) {
                         earliest(at);
                     }
+                    if let Some(at) = live.gate.deadline() {
+                        earliest(at);
+                    }
                     for (_, started) in live.fences.iter().flatten() {
                         earliest(*started + FENCE_TIMEOUT);
                     }
                 }
                 Phase::Waiting | Phase::Syncing => {}
             }
+        }
+        if let Some(every) = self.gpu_pending(now) {
+            earliest(
+                self.last_gpu_poll
+                    .map_or(now, |last| last + every),
+            );
         }
         deadline
     }
@@ -865,7 +967,7 @@ impl State {
         };
         if let Some((fence, _)) = live.fences[slot].take() {
             let _ = epoll::delete(env.epoll, &fence);
-            env.complete_dmabuf(live, slot);
+            env.complete_dmabuf(live, slot, Instant::now());
         }
     }
 
@@ -1038,12 +1140,118 @@ impl State {
     }
 }
 
+fn hand_over_inits(live: &mut Live, now: Instant) {
+    let mut warned = false;
+    for slot in 0..RING {
+        let Some(buffer) = live.buffers[slot].as_mut() else {
+            continue;
+        };
+        let (progress, late) = match &buffer.init {
+            Some(init) => (
+                init.done.progress(),
+                now.saturating_duration_since(init.posted) >= INIT_TIMEOUT,
+            ),
+            None => continue,
+        };
+        match progress {
+            Progress::Finished => {
+                // The compositor may write it only after the layout copy ran.
+                if let Some(init) = buffer.init.take() {
+                    init.params.create(
+                        init.width,
+                        init.height,
+                        init.fourcc,
+                        zwp_linux_buffer_params_v1::Flags::empty(),
+                    );
+                }
+            }
+            Progress::Failed | Progress::Cancelled => {
+                live.buffers[slot] = None;
+                live.machine.create_failed(slot);
+            }
+            Progress::Queued | Progress::Submitted if late => {
+                if !std::mem::replace(&mut warned, true) {
+                    warn!(
+                        id = live.id.0,
+                        slot, "a dmabuf layout copy did not finish in time, shm for this session"
+                    );
+                }
+                live.buffers[slot] = None;
+                live.machine.create_failed(slot);
+            }
+            Progress::Queued | Progress::Submitted => {}
+        }
+    }
+}
+
+fn settle_compare(live: &mut Live, env: &mut Env<'_>, now: Instant) {
+    let Some(progress) = live
+        .comparing
+        .as_ref()
+        .map(|done| done.progress())
+    else {
+        return;
+    };
+    match progress {
+        Progress::Queued | Progress::Submitted => {
+            let expired = live.gate.expire(now);
+            if expired.iter().all(Option::is_none) {
+                return;
+            }
+            if !std::mem::replace(&mut live.compare_late, true) {
+                warn!(
+                    id = live.id.0,
+                    "a frame compare got no answer in time, frames show uncompared"
+                );
+            }
+            for slot in expired.into_iter().flatten() {
+                live.machine.finished(slot, true);
+            }
+            // Never submitted, so the GPU never read its buffers.
+            if let Some(done) = &live.comparing {
+                done.cancel();
+                if done.progress() == Progress::Cancelled {
+                    live.comparing = None;
+                    live.gate.clear();
+                }
+            }
+        }
+        Progress::Finished | Progress::Failed | Progress::Cancelled => {
+            live.comparing = None;
+            let differs = match progress {
+                Progress::Finished => {
+                    live.compare_late = false;
+                    live.readback
+                        .as_ref()
+                        .map(Readback::read)
+                }
+                Progress::Failed => {
+                    // wgpu 27 leaves a failed map's range set, so the next map would panic.
+                    live.readback = None;
+                    live.compare = Default::default();
+                    None
+                }
+                _ => None,
+            };
+            let Answer { finished, next } = live.gate.answer(differs);
+            if let Some((slot, changed)) = finished {
+                live.machine.finished(slot, changed);
+            }
+            if let Some(slot) = next {
+                env.complete_dmabuf(live, slot, now);
+            }
+        }
+    }
+}
+
 struct Env<'a> {
     qh: &'a QueueHandle<State>,
     shm: &'a WlShm,
     dmabuf: Option<&'a ZwpLinuxDmabufV1>,
     gpu: &'a GpuRef,
     events: &'a UnboundedSender<Event>,
+    submissions: &'a Submissions,
+    wake: &'a Arc<OwnedFd>,
     epoll: &'a OwnedFd,
     staging: &'a mut Option<wgpu::Buffer>,
     comparer: &'a mut Option<Comparer>,
@@ -1223,7 +1431,13 @@ impl Env<'_> {
                 view_formats: &[],
             });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        Ok(Buffer { wl: Some(wl), texture, view, backing: Backing::Shm { memory, pool, stride } })
+        Ok(Buffer {
+            wl: Some(wl),
+            init: None,
+            texture,
+            view,
+            backing: Backing::Shm { memory, pool, stride },
+        })
     }
 
     #[expect(
@@ -1250,7 +1464,7 @@ impl Env<'_> {
             .dmabuf
             .ok_or("no zwp_linux_dmabuf_v1")?;
         let allocation = device.allocate(&self.gpu.device, texel, width, height, modifiers)?;
-        self.leave_undefined(&allocation.texture);
+        let done = self.leave_undefined(&allocation.texture);
         let params = dmabuf.create_params(self.qh, (id, slot, generation));
         let modifier = allocation.modifier;
         for (plane, (offset, stride)) in allocation
@@ -1268,12 +1482,6 @@ impl Env<'_> {
                 modifier as u32,
             );
         }
-        params.create(
-            width as i32,
-            height as i32,
-            fourcc,
-            zwp_linux_buffer_params_v1::Flags::empty(),
-        );
         debug!(
             id = id.0,
             slot,
@@ -1287,15 +1495,40 @@ impl Env<'_> {
             .create_view(&wgpu::TextureViewDescriptor::default());
         Ok(Buffer {
             wl: None,
+            init: Some(Init {
+                done,
+                params,
+                width: width as i32,
+                height: height as i32,
+                fourcc,
+                posted: Instant::now(),
+            }),
             texture: allocation.texture,
             view,
             backing: Backing::Dmabuf { fd: allocation.fd },
         })
     }
 
+    fn post(&self, job: Job) {
+        match self
+            .submissions
+            .post(job, Instant::now())
+        {
+            Posted::Tell => {
+                let _ = self
+                    .events
+                    .unbounded_send(Event::Submit);
+            }
+            Posted::Refused { first: true } => {
+                warn!("capture GPU work waited 2 s for a submit, new work is refused");
+            }
+            Posted::Queued | Posted::Refused { first: false } => {}
+        }
+    }
+
     /// Uses the new texture once as a copy source, so wgpu's first transition out of
     /// `UNDEFINED` happens before the compositor writes it and never discards a frame.
-    fn leave_undefined(&mut self, texture: &wgpu::Texture) {
+    fn leave_undefined(&mut self, texture: &wgpu::Texture) -> Arc<Done> {
         let device = &self.gpu.device;
         let staging = self.staging.get_or_insert_with(|| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -1320,9 +1553,13 @@ impl Env<'_> {
             },
             wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
         );
-        self.gpu
-            .queue
-            .submit([encoder.finish()]);
+        let done = Done::new(Arc::clone(self.wake));
+        self.post(Job {
+            commands: encoder.finish(),
+            then: Then::WorkDone,
+            done: Arc::clone(&done),
+        });
+        done
     }
 
     fn finish(&mut self, live: &mut Live, slot: usize, now: Instant) {
@@ -1349,40 +1586,52 @@ impl Env<'_> {
                 }
             }
         }
-        self.complete_dmabuf(live, slot);
+        self.complete_dmabuf(live, slot, now);
     }
 
-    fn complete_dmabuf(&mut self, live: &mut Live, slot: usize) {
-        let changed = self.dmabuf_changed(live, slot);
-        live.machine.finished(slot, changed);
-    }
-
-    fn dmabuf_changed(&mut self, live: &mut Live, slot: usize) -> bool {
+    fn complete_dmabuf(&mut self, live: &mut Live, slot: usize, now: Instant) {
         let Some(shown) = (0..RING).find(|&other| live.machine.ring().state(other) == Slot::Shown)
         else {
-            return true;
+            return live.machine.finished(slot, true);
         };
-        let (Some(previous), Some(next)) = (
+        let same_size = match (
             live.buffers[shown].as_ref(),
             live.buffers[slot].as_ref(),
-        ) else {
-            return true;
+        ) {
+            (Some(previous), Some(next)) => previous.texture.size() == next.texture.size(),
+            _ => false,
         };
-        if shown == slot || previous.texture.size() != next.texture.size() {
-            return true;
+        if shown == slot || !same_size {
+            return live.machine.finished(slot, true);
         }
+        match live.gate.begin(slot, shown, now) {
+            Begin::Compare => self.post_compare(live, slot, shown),
+            Begin::Wait => {}
+            Begin::Changed => live.machine.finished(slot, true),
+        }
+    }
+
+    fn post_compare(&mut self, live: &mut Live, slot: usize, shown: usize) {
+        let Live { buffers, compare, readback, comparing, .. } = live;
+        let (Some(previous), Some(next)) = (buffers[shown].as_ref(), buffers[slot].as_ref()) else {
+            return;
+        };
         let device = &self.gpu.device;
+        let readback = readback.get_or_insert_with(|| Readback::new(device));
         let comparer = self
             .comparer
             .get_or_insert_with(|| Comparer::new(device));
-        let group = live.compare[shown][slot]
-            .get_or_insert_with(|| comparer.bind_group(device, &previous.view, &next.view));
-        comparer.differ(
-            device,
-            &self.gpu.queue,
-            group,
-            next.texture.size(),
-        )
+        let group = compare[shown][slot].get_or_insert_with(|| {
+            comparer.bind_group(device, readback, &previous.view, &next.view)
+        });
+        let commands = comparer.record(device, readback, group, next.texture.size());
+        let done = Done::new(Arc::clone(self.wake));
+        self.post(Job {
+            commands,
+            then: Then::MapRead(readback.buffer().clone()),
+            done: Arc::clone(&done),
+        });
+        *comparing = Some(done);
     }
 
     fn finish_shm(&self, live: &mut Live, slot: usize) {
@@ -1401,7 +1650,7 @@ impl Env<'_> {
         };
         if changed {
             let size = texture.size();
-            self.gpu.queue.write_texture(
+            self.gpu.uploads.write_texture(
                 texture.as_image_copy(),
                 memory.bytes(),
                 wgpu::TexelCopyBufferLayout {

@@ -2413,6 +2413,14 @@ mod tests {
     }
 
     #[test]
+    fn a_capture_submit_redraws_nothing() {
+        assert_eq!(
+            redraw_scope(&Message::Capture(deskshell_wl::Event::Submit)),
+            Scope::None
+        );
+    }
+
+    #[test]
     fn the_toasts_surface() {
         let settings = toast_settings(Some(7), 0);
         assert_eq!(
