@@ -19,6 +19,7 @@ mod probe;
 mod record_cmd;
 pub mod runtime;
 pub mod screenshot;
+mod sd_notify;
 pub mod services;
 mod session;
 mod share_picker;
@@ -29,6 +30,7 @@ mod update_cmd;
 mod update_terminal;
 pub mod updates;
 pub mod view;
+mod watchdog;
 
 use std::env;
 use std::ffi::OsString;

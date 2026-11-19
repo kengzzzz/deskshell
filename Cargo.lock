@@ -1133,8 +1133,6 @@ dependencies = [
 [[package]]
 name = "exwlshellev"
 version = "0.21.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f546ff4f979f0e6ada7c629e650bafa450f17f2ea77a4c7d2b4f0987451ef13"
 dependencies = [
  "calloop 0.14.5",
  "calloop-wayland-source 0.4.1",

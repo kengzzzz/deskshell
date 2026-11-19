@@ -54,6 +54,7 @@ use crate::panels::{self, Manager, Op, Open, Panel, Route};
 use crate::toasts::wiring;
 use crate::toasts::{self, Toasts};
 use crate::updates;
+use crate::watchdog::Watchdog;
 use crate::{EXIT_FAILED, clock, panic, probe, runtime, view};
 use crate::{bar, services};
 use crate::{pickers, screenshot};
@@ -78,8 +79,24 @@ const AUTH_SHUTDOWN: Duration = Duration::from_secs(3);
 pub fn run() -> ExitCode {
     // SAFETY: the shell path calls this first, before anything has started a thread.
     let forced_env = unsafe { force_vulkan() };
+    // SAFETY: as above.
+    let watchdog = unsafe { Watchdog::take() };
     panic::install();
     init_logging();
+    let watchdog = match watchdog {
+        Some(Ok(watchdog)) => {
+            info!(
+                interval_ms = watchdog.interval().as_millis(),
+                "systemd watchdog on"
+            );
+            Some(watchdog)
+        }
+        Some(Err(err)) => {
+            warn!(%err, "cannot open the notify socket, so systemd's watchdog will stop the shell");
+            None
+        }
+        None => None,
+    };
     remember_binary();
 
     if !has_wayland() {
@@ -190,6 +207,7 @@ pub fn run() -> ExitCode {
         clipboard_link,
         clipboard,
         holidays,
+        watchdog,
     }));
     let mut app = daemon(
         move || {
@@ -429,6 +447,7 @@ struct Boot {
     clipboard_link: clipboard_link::ClipboardLink,
     clipboard: clipboard::Config,
     holidays: Option<watch::Receiver<Arc<calendar::Holidays>>>,
+    watchdog: Option<Watchdog>,
 }
 
 #[cfg(test)]
@@ -460,6 +479,7 @@ impl Boot {
             clipboard_link,
             clipboard,
             holidays: None,
+            watchdog: None,
         }
     }
 }
@@ -482,6 +502,7 @@ pub enum Message {
     Prewarm(panel::Message),
     Capture(deskshell_wl::Event),
     CheckGpu,
+    Watchdog,
     RefreshWindows,
     NotifyChanged,
     NotifyEffects(Vec<NotifyEffect>),
@@ -596,6 +617,7 @@ struct Shell {
     toast_surface: Option<ToastSurface>,
     toast_requests: Vec<toasts::Request>,
     holidays: Feed<watch::Receiver<Arc<calendar::Holidays>>>,
+    watchdog: Option<Watchdog>,
     share_screens: Vec<share::Screen>,
     share_reply: pickers::ShareReply,
     selector: screenshot::Selector,
@@ -697,6 +719,7 @@ impl Shell {
             toast_surface: None,
             toast_requests: Vec::with_capacity(4),
             holidays: Feed::new(boot.holidays),
+            watchdog: boot.watchdog,
             share_screens: Vec::with_capacity(4),
             share_reply: pickers::ShareReply::default(),
             selector: screenshot::Selector::default(),
@@ -763,6 +786,14 @@ impl Shell {
             Message::Capture(event) => self.capture_event(event),
             Message::CheckGpu => {
                 self.start_capture();
+                Task::none()
+            }
+            Message::Watchdog => {
+                if let Some(watchdog) = &mut self.watchdog {
+                    watchdog.ping(Instant::now());
+                }
+                #[cfg(feature = "test-hooks")]
+                crate::watchdog::test_stall();
                 Task::none()
             }
             Message::RefreshWindows => {
@@ -1239,6 +1270,9 @@ impl Shell {
         ]);
         if self.captures.needs_gpu() {
             subscriptions.push(iced::time::every(GPU_POLL).map(|_| Message::CheckGpu));
+        }
+        if let Some(watchdog) = &self.watchdog {
+            subscriptions.push(iced::time::every(watchdog.interval()).map(|_| Message::Watchdog));
         }
         subscriptions.push(Subscription::run(clock::minutes).map(|()| Message::Minute));
         subscriptions.push(

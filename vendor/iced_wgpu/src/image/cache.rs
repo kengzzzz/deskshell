@@ -185,7 +185,7 @@ impl Cache {
             &mut self.raster.cache,
             &mut self.raster.pending,
             #[cfg(not(target_arch = "wasm32"))]
-            &self.worker,
+            &mut self.worker,
             handle,
             None,
         )?;
@@ -215,7 +215,7 @@ impl Cache {
             &mut self.raster.cache,
             &mut self.raster.pending,
             #[cfg(not(target_arch = "wasm32"))]
-            &self.worker,
+            &mut self.worker,
             handle,
             None,
         )?;
@@ -384,7 +384,7 @@ type Callback =
 fn load_image<'a>(
     cache: &'a mut crate::image::raster::Cache,
     pending: &mut HashMap<core::image::Id, Vec<Callback>>,
-    #[cfg(not(target_arch = "wasm32"))] worker: &Worker,
+    #[cfg(not(target_arch = "wasm32"))] worker: &mut Worker,
     handle: &core::image::Handle,
     callback: Option<Callback>,
 ) -> Option<&'a mut crate::image::raster::Memory> {
@@ -418,13 +418,12 @@ mod worker {
 
     use std::sync::Arc;
     use std::sync::mpsc;
-    use std::thread;
 
+    // deskshell: jobs run on the calling thread, the one that presents. A second thread that
+    // submits races wgpu's unlocked vkDeviceWaitIdle in surface drop and configure.
     pub struct Worker {
-        jobs: mpsc::SyncSender<Job>,
-        quit: mpsc::SyncSender<()>,
+        instance: Instance,
         work: mpsc::Receiver<Work>,
-        handle: Option<std::thread::JoinHandle<()>>,
     }
 
     impl Worker {
@@ -435,9 +434,7 @@ mod worker {
             texture_layout: wgpu::BindGroupLayout,
             shell: &Shell,
         ) -> Self {
-            let (jobs_sender, jobs_receiver) = mpsc::sync_channel(1_000);
-            let (quit_sender, quit_receiver) = mpsc::sync_channel(1);
-            let (work_sender, work_receiver) = mpsc::sync_channel(1_000);
+            let (work_sender, work_receiver) = mpsc::channel();
 
             let instance = Instance {
                 device: device.clone(),
@@ -446,27 +443,21 @@ mod worker {
                 texture_layout,
                 shell: shell.clone(),
                 belt: wgpu::util::StagingBelt::new(4 * 1024 * 1024),
-                jobs: jobs_receiver,
                 output: work_sender,
-                quit: quit_receiver,
             };
 
-            let handle = thread::spawn(move || instance.run());
-
             Self {
-                jobs: jobs_sender,
-                quit: quit_sender,
+                instance,
                 work: work_receiver,
-                handle: Some(handle),
             }
         }
 
-        pub fn load(&self, handle: &image::Handle) {
-            let _ = self.jobs.send(Job::Load(handle.clone()));
+        pub fn load(&mut self, handle: &image::Handle) {
+            self.instance.run(Job::Load(handle.clone()));
         }
 
-        pub fn upload(&self, handle: &image::Handle, image: raster::Image) {
-            let _ = self.jobs.send(Job::Upload {
+        pub fn upload(&mut self, handle: &image::Handle, image: raster::Image) {
+            self.instance.run(Job::Upload {
                 handle: handle.clone(),
                 width: image.width(),
                 height: image.height(),
@@ -475,18 +466,14 @@ mod worker {
         }
 
         pub fn drop(&self, bind_group: Arc<wgpu::BindGroup>) {
-            let _ = self.jobs.send(Job::Drop(bind_group));
+            drop(bind_group);
         }
 
         pub fn try_recv(&self) -> Result<Work, mpsc::TryRecvError> {
             self.work.try_recv()
         }
 
-        pub fn quit(&mut self) {
-            let _ = self.quit.try_send(());
-            let _ = self.jobs.send(Job::Quit);
-            let _ = self.handle.take().map(thread::JoinHandle::join);
-        }
+        pub fn quit(&mut self) {}
     }
 
     pub struct Instance {
@@ -496,9 +483,7 @@ mod worker {
         texture_layout: wgpu::BindGroupLayout,
         shell: Shell,
         belt: wgpu::util::StagingBelt,
-        jobs: mpsc::Receiver<Job>,
-        output: mpsc::SyncSender<Work>,
-        quit: mpsc::Receiver<()>,
+        output: mpsc::Sender<Work>,
     }
 
     #[derive(Debug)]
@@ -510,8 +495,6 @@ mod worker {
             width: u32,
             height: u32,
         },
-        Drop(Arc<wgpu::BindGroup>),
-        Quit,
     }
 
     pub enum Work {
@@ -527,51 +510,35 @@ mod worker {
     }
 
     impl Instance {
-        fn run(mut self) {
-            loop {
-                if self.quit.try_recv().is_ok() {
-                    return;
-                }
-
-                let Ok(job) = self.jobs.recv() else {
-                    return;
-                };
-
-                match job {
-                    Job::Load(handle) => {
-                        match crate::graphics::image::load(&handle) {
-                            Ok(image) => self.upload(
-                                handle,
-                                image.width(),
-                                image.height(),
-                                image.into_raw(),
-                                Shell::invalidate_layout,
-                            ),
-                            Err(error) => {
-                                let _ = self
-                                    .output
-                                    .send(Work::Error { handle, error });
-                            }
+        fn run(&mut self, job: Job) {
+            match job {
+                Job::Load(handle) => {
+                    match crate::graphics::image::load(&handle) {
+                        Ok(image) => self.upload(
+                            handle,
+                            image.width(),
+                            image.height(),
+                            image.into_raw(),
+                            Shell::invalidate_layout,
+                        ),
+                        Err(error) => {
+                            let _ = self.output.send(Work::Error { handle, error });
                         }
                     }
-                    Job::Upload {
+                }
+                Job::Upload {
+                    handle,
+                    rgba,
+                    width,
+                    height,
+                } => {
+                    self.upload(
                         handle,
-                        rgba,
                         width,
                         height,
-                    } => {
-                        self.upload(
-                            handle,
-                            width,
-                            height,
-                            rgba,
-                            Shell::request_redraw,
-                        );
-                    }
-                    Job::Drop(bind_group) => {
-                        drop(bind_group);
-                    }
-                    Job::Quit => return,
+                        rgba,
+                        Shell::request_redraw,
+                    );
                 }
             }
         }

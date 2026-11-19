@@ -20,7 +20,7 @@ optdepends=('greetd: the greeter, installed by hand from /usr/share/deskshell/gr
             'gnupg: unlock the keyring with a YubiKey'
             "paru: the Hub's Terminal button and the update runner"
             "kitty: the Hub's Terminal button")
-options=(!lto !debug)
+options=(!lto debug)
 install=deskshell.install
 
 _repo=$(git -C "$startdir" rev-parse --show-toplevel)
@@ -49,6 +49,9 @@ prepare() {
 build() {
     cd "$pkgname"
     export CARGO_TARGET_DIR="$srcdir/target"
+    # makepkg strips and splits the symbols into deskshell-debug. Line tables are enough for a stack.
+    export CARGO_PROFILE_RELEASE_STRIP=false
+    export RUSTFLAGS+=" -C debuginfo=line-tables-only"
     # One invocation per binary, so a binary never gets features another one asked for.
     # A workspace build would compile deskshell-auth with `async` into the PAM worker.
     local bin

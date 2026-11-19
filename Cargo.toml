@@ -57,6 +57,8 @@ zeroize = "1.9.1"
 [patch.crates-io]
 # Adds a device hook so the shell can enable VK_EXT_image_drm_format_modifier. See vendor/README.md.
 iced_wgpu = { path = "vendor/iced_wgpu" }
+# Unmaps a layer before its GPU surface drops. See vendor/README.md.
+exwlshellev = { path = "vendor/exwlshellev" }
 
 [workspace.lints.clippy]
 allow_attributes_without_reason = "warn"

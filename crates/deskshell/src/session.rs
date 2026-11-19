@@ -10,9 +10,6 @@ use std::ffi::OsString;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, Write};
-use std::os::linux::net::SocketAddrExt;
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::net::{SocketAddr, UnixDatagram};
 use std::path::Path;
 use std::pin::{Pin, pin};
 use std::process::ExitCode;
@@ -28,6 +25,7 @@ use zbus::Connection;
 
 use self::env::Plan;
 use self::state::Files;
+use crate::sd_notify::NotifySocket;
 use crate::{EXIT_FAILED, usage_error};
 
 const HYPRLAND: &str = "deskshell-hyprland.service";
@@ -1064,21 +1062,11 @@ fn process_start(pid: u32) -> io::Result<u64> {
         .ok_or_else(|| io::Error::other("no start time in stat"))
 }
 
-// As `sd_notify` sends it. A leading `@` in `$NOTIFY_SOCKET` names an abstract socket.
 fn notify_ready() {
     let Some(address) = std::env::var_os("NOTIFY_SOCKET") else {
         return;
     };
-    let sent =
-        UnixDatagram::unbound().and_then(
-            |socket| match address.as_bytes().strip_prefix(b"@") {
-                Some(name) => {
-                    socket.send_to_addr(b"READY=1", &SocketAddr::from_abstract_name(name)?)
-                }
-                None => socket.send_to(b"READY=1", Path::new(&address)),
-            },
-        );
-    if let Err(err) = sent {
+    if let Err(err) = NotifySocket::open(&address).and_then(|socket| socket.send(b"READY=1")) {
         complain(
             "deskshell session watch",
             &format_args!("cannot send READY=1: {err}"),

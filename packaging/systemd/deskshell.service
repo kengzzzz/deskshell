@@ -17,6 +17,8 @@ Type=exec
 ExecStart=/usr/bin/deskshell
 Restart=always
 RestartSec=1
+WatchdogSec=10s
+NotifyAccess=main
 KillMode=process
 Slice=session.slice
 

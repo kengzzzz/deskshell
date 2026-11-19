@@ -1,0 +1,43 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1636,6 +1636,30 @@
+         }
+     }
+ 
++    fn unmap_layer(&self, id: id::Id, connection: &Connection) {
++        let Some(Shell::LayerShell(layer)) = self
++            .shells
++            .iter()
++            .find(|unit| unit.id == id)
++            .map(|unit| &unit.shell)
++        else {
++            return;
++        };
++        // A null buffer would unmap too, but the compositor's fade-out snapshot would be empty.
++        // Drop destroys the role again, which is a no-op on a dead proxy.
++        layer.destroy();
++        for _ in 0..50 {
++            match connection.flush() {
++                Err(wayland_backend::client::WaylandError::Io(err))
++                    if err.kind() == std::io::ErrorKind::WouldBlock =>
++                {
++                    std::thread::sleep(std::time::Duration::from_millis(2));
++                }
++                _ => return,
++            }
++        }
++    }
++
+     /// remove a shell, destroy the surface
+     fn remove_shell(&mut self, id: id::Id) -> Option<()> {
+         let index = self.shells.iter().position(|unit| unit.id == id)?;
+@@ -3502,6 +3526,9 @@
+                     .collect_descendants_then_self(root, &mut to_be_closed_ids);
+             }
+             for id in to_be_closed_ids {
++                // The close handler drops the GPU surface, which can block in the driver. Destroy
++                // the layer role first, so a stuck close leaves no layer on screen taking input.
++                context.state.unmap_layer(id, &connection);
+                 context.handle_window_event(ExWlShellEvent::Closed, id);
+                 context.state.remove_shell(id);
+             }

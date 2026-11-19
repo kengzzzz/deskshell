@@ -38,6 +38,10 @@ deskshell-polkit.workspace = true
 deskshell-keyring = { path = "../keyring" }
 deskshell-pacman = { path = "../pacman" }
 
+[features]
+# Guest builds only.
+test-hooks = []
+
 [dev-dependencies]
 iced_test.workspace = true
 image.workspace = true
