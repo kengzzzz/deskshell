@@ -469,7 +469,7 @@ fn auth_settings(surface: Surface, output: Option<u32>, height: u32) -> NewLayer
 #[cfg(test)]
 impl Shell {
     pub(super) fn hold_auth_keyboard(&mut self) {
-        let slot = Surface::Sheet(crate::auth::SheetKind::Polkit).index();
+        let slot = Surface::Sheet(auth::SheetKind::Polkit).index();
         self.auth.surfaces[slot] =
             Some(Open { id: window::Id::unique(), output: None, height: 220 });
     }
@@ -870,9 +870,7 @@ mod tests {
                 IcedEvent::Keyboard(keyboard::Event::KeyPressed {
                     key: keyboard::Key::Named(named),
                     modified_key: keyboard::Key::Named(named),
-                    physical_key: keyboard::key::Physical::Unidentified(
-                        keyboard::key::NativeCode::Unidentified,
-                    ),
+                    physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
                     location: keyboard::Location::Standard,
                     modifiers: keyboard::Modifiers::empty(),
                     text: None,
@@ -888,9 +886,7 @@ mod tests {
                 IcedEvent::Keyboard(keyboard::Event::KeyReleased {
                     key: keyboard::Key::Named(named),
                     modified_key: keyboard::Key::Named(named),
-                    physical_key: keyboard::key::Physical::Unidentified(
-                        keyboard::key::NativeCode::Unidentified,
-                    ),
+                    physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
                     location: keyboard::Location::Standard,
                     modifiers: keyboard::Modifiers::empty(),
                 }),

@@ -214,7 +214,7 @@ fn spec() -> Vec<Case> {
             "count",
             &[],
             Command::Notifications(Notifications::Count),
-            ReturnType::String,
+            String,
         ),
         case(
             "status",

@@ -219,7 +219,7 @@ async fn shutdown_releases_everything() {
     let conn = tray.conn.clone();
     let client = bus.connect().await;
     let host_names = || async {
-        let names: Vec<String> = zbus::fdo::DBusProxy::new(&client)
+        zbus::fdo::DBusProxy::new(&client)
             .await
             .expect("a proxy")
             .list_names()
@@ -227,9 +227,6 @@ async fn shutdown_releases_everything() {
             .expect("names")
             .into_iter()
             .map(|n| n.to_string())
-            .collect();
-        names
-            .into_iter()
             .filter(|n| n.starts_with("org.kde.StatusNotifier"))
             .collect::<Vec<_>>()
     };

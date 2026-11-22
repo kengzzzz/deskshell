@@ -248,7 +248,7 @@ mod tests {
         let server =
             UnixDatagram::bind_addr(&SocketAddr::from_abstract_name(name.as_bytes()).unwrap())
                 .unwrap();
-        let socket = std::ffi::OsString::from_vec(format!("@{name}").into_bytes());
+        let socket = OsString::from_vec(format!("@{name}").into_bytes());
         send(&socket, b"READY=1").unwrap();
         let n = server.recv(&mut buffer).unwrap();
         assert_eq!(&buffer[..n], b"READY=1");
@@ -274,7 +274,7 @@ mod tests {
             UnixDatagram::bind_addr(&SocketAddr::from_abstract_name(name.as_bytes()).unwrap())
                 .unwrap();
         let fake = manager(server, 2, false);
-        let socket = std::ffi::OsString::from_vec(format!("@{name}").into_bytes());
+        let socket = OsString::from_vec(format!("@{name}").into_bytes());
         assert_eq!(
             stop(Some(&socket), STOP_TIMEOUT).unwrap(),
             Stopped::Confirmed
@@ -319,7 +319,7 @@ mod tests {
         .unwrap();
         assert!(stop(Some(path.as_os_str()), STOP_TIMEOUT).is_err());
 
-        let socket = std::ffi::OsString::from_vec(
+        let socket = OsString::from_vec(
             format!("@deskshell-lock-nobody-{}", std::process::id()).into_bytes(),
         );
         assert!(stop(Some(&socket), STOP_TIMEOUT).is_err());

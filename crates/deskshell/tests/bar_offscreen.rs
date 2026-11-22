@@ -727,12 +727,7 @@ fn idle_bars() -> Bars {
     bars
 }
 
-fn render<'a>(
-    dir: &Path,
-    name: &str,
-    size: (f32, f32),
-    element: Element<'a, Message>,
-) -> Vec<Message> {
+fn render(dir: &Path, name: &str, size: (f32, f32), element: Element<'_, Message>) -> Vec<Message> {
     let element = container(element)
         .width(Length::Fill)
         .height(Length::Fill)

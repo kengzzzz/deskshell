@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn descriptors_pass_and_a_truncated_message_is_an_error() {
         let (a, b) = UnixStream::pair().unwrap();
-        let (mut reader, mut writer) = std::io::pipe().unwrap();
+        let (mut reader, mut writer) = io::pipe().unwrap();
         writer.write_all(b"through").unwrap();
         drop(writer);
         let sent = send_msg(a.as_fd(), b"x", &[reader.as_fd()]).unwrap();

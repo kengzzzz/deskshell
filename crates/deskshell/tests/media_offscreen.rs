@@ -70,7 +70,7 @@ fn main() {
     open(&mut panel, &one, at(53));
     render(&dir, "one-art", &env, &mut panel, &one);
     clicks(&env, &mut panel, &one);
-    tooltip(&dir, &env, &mut panel, &one);
+    tooltip(&dir, &env, &panel, &one);
 
     let mut bare = player(
         "two",
@@ -301,7 +301,7 @@ fn nth_text(simulator: &mut Simulator<'_, panel::Message>, content: &str, nth: u
         .unwrap_or_else(|err| panic!("text {content:?} #{nth}: {err}"))
 }
 
-fn tooltip(dir: &Path, env: &Env<'_>, panel: &mut Media, players: &Players) {
+fn tooltip(dir: &Path, env: &Env<'_>, panel: &Media, players: &Players) {
     let height = panel.surface_height(Some(SCREEN_HEIGHT)) as f32;
     let mut simulator = simulator(Size::new(WIDTH, height), panel.view(env, players));
     let next = nth_text(&mut simulator, NEXT, 1);

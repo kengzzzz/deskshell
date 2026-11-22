@@ -60,12 +60,25 @@ iced_wgpu = { path = "vendor/iced_wgpu" }
 # Unmaps a layer before its GPU surface drops. See vendor/README.md.
 exwlshellev = { path = "vendor/exwlshellev" }
 
+[workspace.lints.rust]
+non_ascii_idents = "warn"
+single_use_lifetimes = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+
 [workspace.lints.clippy]
 allow_attributes_without_reason = "warn"
 clone_on_ref_ptr = "warn"
+dbg_macro = "warn"
 implicit_clone = "warn"
+mem_forget = "warn"
+needless_collect = "warn"
+needless_pass_by_ref_mut = "warn"
 needless_pass_by_value = "warn"
+redundant_clone = "warn"
 ref_option = "warn"
+str_to_string = "warn"
+todo = "warn"
 
 [workspace.lints.cargo]
 unused_dependencies = "deny"

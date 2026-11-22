@@ -312,7 +312,7 @@ mod tests {
             )
             .unwrap();
         let handle = wallpaper(&png, 400, 300).expect("decoded");
-        let iced::advanced::image::Handle::Rgba { width, height, .. } = handle else {
+        let Handle::Rgba { width, height, .. } = handle else {
             panic!("raw pixels");
         };
         assert_eq!((width, height), (100, 75));

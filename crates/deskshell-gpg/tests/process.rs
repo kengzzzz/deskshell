@@ -26,7 +26,7 @@ async fn exited(child: &mut Child) -> ExitStatus {
             return status;
         }
         assert!(start.elapsed() < WAIT, "the process did not exit");
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 

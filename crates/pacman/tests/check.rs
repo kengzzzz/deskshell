@@ -599,7 +599,7 @@ fn the_deadline_ends_a_stalled_aur() {
     setup
         .server
         .route("/rpc/v5/info", Route::Stall);
-    let config = Config { deadline: Duration::from_millis(1500), ..setup.config.clone() };
+    let config = Config { deadline: Duration::from_millis(1500), ..setup.config };
     let started = Instant::now();
     let report = check(&config).unwrap();
     assert!(started.elapsed() < Duration::from_secs(3));

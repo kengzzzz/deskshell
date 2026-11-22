@@ -1096,7 +1096,7 @@ async fn watch_counted(
     temp: &Temp,
     term: impl Future<Output = ()>,
 ) -> (Result<(), String>, usize) {
-    let readies = std::cell::Cell::new(0);
+    let readies = Cell::new(0);
     let watched = watch(fake, pid, &temp.files(), &LIMITS, term, || {
         readies.set(readies.get() + 1)
     })

@@ -163,7 +163,7 @@ fn wait_for(rx: &watch::Receiver<Camera>, want: &[CameraUser], limit: Duration) 
     }
 }
 
-fn quiet(rx: &mut watch::Receiver<Camera>, time: Duration) {
+fn quiet(rx: &watch::Receiver<Camera>, time: Duration) {
     sleep(time);
     assert!(
         !rx.has_changed().unwrap(),
@@ -190,10 +190,10 @@ fn hardware_and_virtual_nodes() {
         .collect();
     assert_eq!(classes, [("video0", true), ("video10", false)]);
 
-    let (_service, mut rx) = start(&tree);
+    let (_service, rx) = start(&tree);
     tree.hold(100, 3, &loopback);
     let reader = open(&loopback);
-    quiet(&mut rx, HOLD * 2);
+    quiet(&rx, HOLD * 2);
     assert!(users(&rx).is_empty());
 
     tree.hold(200, 3, &webcam);
@@ -210,13 +210,13 @@ fn hardware_and_virtual_nodes() {
 fn probe_shorter_than_the_hold() {
     let tree = Tree::new("probe");
     let webcam = tree.node("video0", true);
-    let (_service, mut rx) = start(&tree);
+    let (_service, rx) = start(&tree);
     tree.hold(100, 3, &webcam);
     let file = open(&webcam);
     sleep(HOLD / 3);
     tree.release(100, 3);
     drop(file);
-    quiet(&mut rx, HOLD * 3);
+    quiet(&rx, HOLD * 3);
 }
 
 #[test]
@@ -324,12 +324,12 @@ fn reader_of_the_virtual_node_while_the_webcam_is_closed() {
     let tree = Tree::new("closed-webcam");
     tree.node("video0", true);
     let loopback = tree.node("video10", false);
-    let (_service, mut rx) = start(&tree);
+    let (_service, rx) = start(&tree);
     tree.hold(100, 4, &loopback);
     let producer = open(&loopback);
     tree.hold(200, 3, &loopback);
     let reader = open(&loopback);
-    quiet(&mut rx, HOLD * 2);
+    quiet(&rx, HOLD * 2);
     drop((producer, reader));
 }
 
@@ -381,11 +381,11 @@ fn unreadable_holder_through_the_last_event() {
 fn short_probe_by_an_unreadable_process() {
     let tree = Tree::new("unknown-probe");
     let webcam = tree.node("video0", true);
-    let (_service, mut rx) = start(&tree);
+    let (_service, rx) = start(&tree);
     let file = open(&webcam);
     sleep(HOLD / 6);
     drop(file);
-    quiet(&mut rx, HOLD * 3);
+    quiet(&rx, HOLD * 3);
 }
 
 #[test]

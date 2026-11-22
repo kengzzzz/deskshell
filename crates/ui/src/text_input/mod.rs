@@ -1758,9 +1758,7 @@ mod tests {
         let typed = keyboard::Event::KeyPressed {
             key: keyboard::Key::Character("3".into()),
             modified_key: keyboard::Key::Character("3".into()),
-            physical_key: keyboard::key::Physical::Unidentified(
-                keyboard::key::NativeCode::Unidentified,
-            ),
+            physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
             location: keyboard::Location::Standard,
             modifiers: keyboard::Modifiers::empty(),
             text: Some("3".into()),
@@ -1796,8 +1794,7 @@ mod tests {
     fn submit_once_takes_one_submit_per_press() {
         type Null = ();
         let key = keyboard::Key::Named(key::Named::Enter);
-        let physical =
-            keyboard::key::Physical::Unidentified(keyboard::key::NativeCode::Unidentified);
+        let physical = key::Physical::Unidentified(key::NativeCode::Unidentified);
         let press = |repeat| {
             Event::Keyboard(keyboard::Event::KeyPressed {
                 key: key.clone(),

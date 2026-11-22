@@ -142,8 +142,7 @@ impl KeyringSurface {
 
 fn enter(pressed: bool) -> IcedEvent {
     let key = keyboard::Key::Named(key::Named::Enter);
-    let physical_key =
-        keyboard::key::Physical::Unidentified(keyboard::key::NativeCode::Unidentified);
+    let physical_key = key::Physical::Unidentified(key::NativeCode::Unidentified);
     IcedEvent::Keyboard(if pressed {
         keyboard::Event::KeyPressed {
             key: key.clone(),

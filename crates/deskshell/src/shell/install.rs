@@ -333,7 +333,7 @@ mod tests {
 
     fn cancel_current(
         commands: &mut mpsc::UnboundedReceiver<install::Command>,
-    ) -> tokio::sync::oneshot::Sender<install::CancelReply> {
+    ) -> oneshot::Sender<install::CancelReply> {
         match commands.try_recv() {
             Ok(install::Command::CancelCurrent { answer }) => answer,
             other => panic!("expected a cancel of the current run, got {other:?}"),

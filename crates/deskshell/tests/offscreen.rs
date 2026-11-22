@@ -62,7 +62,7 @@ fn main() {
     println!("offscreen renders in {}", dir.display());
 }
 
-fn render<'a>(dir: &Path, name: &str, size: (f32, f32), element: Element<'a, Message>) {
+fn render(dir: &Path, name: &str, size: (f32, f32), element: Element<'_, Message>) {
     let settings = Settings {
         fonts: fonts::all()
             .iter()

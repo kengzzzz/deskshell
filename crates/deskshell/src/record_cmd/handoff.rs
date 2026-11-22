@@ -370,6 +370,10 @@ pub(crate) mod tests {
         for round in 0..50 {
             write(&dir, &handoff("screen:DP-1")).unwrap();
             let barrier = Arc::new(Barrier::new(2));
+            #[expect(
+                clippy::needless_collect,
+                reason = "both threads must run before a join"
+            )]
             let pickers: Vec<_> = (0..2)
                 .map(|_| {
                     let (dir, proc, barrier) = (dir.clone(), proc.clone(), Arc::clone(&barrier));

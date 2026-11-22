@@ -117,7 +117,7 @@ struct Derived {
 pub struct Hub {
     open: bool,
     effects: Vec<Effect>,
-    notifications: notifications::Notifications,
+    notifications: Notifications,
     connections: connections::Connections,
     derived: Derived,
 }

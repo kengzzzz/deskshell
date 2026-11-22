@@ -187,7 +187,7 @@ mod tests {
     }
 
     fn press(inert_now: bool, renderer: &mut iced::Renderer) -> Vec<Message> {
-        let view: iced::Element<'_, Message> = inert(
+        let view: Element<'_, Message> = inert(
             button("Lock")
                 .on_press(Message::Pressed)
                 .width(100)

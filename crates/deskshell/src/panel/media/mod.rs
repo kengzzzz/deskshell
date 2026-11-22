@@ -234,7 +234,7 @@ impl Media {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let keys = iced::event::listen_with(key_message);
+        let keys = event::listen_with(key_message);
         if self.ticking {
             Subscription::batch([keys, iced::time::every(TICK).map(Message::Tick)])
         } else {

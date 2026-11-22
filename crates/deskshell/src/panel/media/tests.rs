@@ -455,9 +455,7 @@ fn keys_map_to_messages() {
         let event = Event::Keyboard(keyboard::Event::KeyPressed {
             key: key.clone(),
             modified_key: key,
-            physical_key: keyboard::key::Physical::Unidentified(
-                keyboard::key::NativeCode::Unidentified,
-            ),
+            physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
             location: keyboard::Location::Standard,
             modifiers,
             text: None,

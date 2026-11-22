@@ -220,10 +220,7 @@ fn a_state_after_nine_long_kernel_names_fits_a_line() {
     let Some(FromRunner::State(report)) = FromRunner::parse(line.trim_end().as_bytes()) else {
         panic!("not a state");
     };
-    assert_eq!(
-        report.job.phase,
-        Some(crate::install::Phase::Done)
-    );
+    assert_eq!(report.job.phase, Some(Phase::Done));
     assert_eq!(report.job.done, Some(9));
     assert_eq!(report.auth, auth);
 
@@ -263,9 +260,6 @@ fn a_state_of_control_bytes_stays_under_the_budget() {
     let Some(FromRunner::State(report)) = FromRunner::parse(line.trim_end().as_bytes()) else {
         panic!("not a state");
     };
-    assert_eq!(
-        report.job.phase,
-        Some(crate::install::Phase::Failed)
-    );
+    assert_eq!(report.job.phase, Some(Phase::Failed));
     assert_eq!(report.auth, auth);
 }

@@ -563,6 +563,10 @@ impl Shell {
     }
 
     #[cfg(not(test))]
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "the test build records the launch"
+    )]
     fn screenshot_launch(&mut self, argv: &[String]) {
         super::spawn(argv, None, &self.forced_env);
     }

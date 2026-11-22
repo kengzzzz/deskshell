@@ -1720,7 +1720,7 @@ impl Shell {
             Effect::SpawnSettled(argv) => {
                 let forced_env = self.forced_env.clone();
                 Task::future(async move {
-                    tokio::time::sleep(crate::screenshot::flow::SETTLE).await;
+                    tokio::time::sleep(screenshot::flow::SETTLE).await;
                     spawn(&argv, None, &forced_env);
                 })
                 .discard()

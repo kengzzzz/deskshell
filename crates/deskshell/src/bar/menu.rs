@@ -357,7 +357,7 @@ pub fn view<'a>(view: &'a MenuView, theme: &'a Theme) -> Element<'a, Message> {
 }
 
 fn label<'a>(theme: &Theme, content: &'a str, tone: Tone, weight: Weight) -> Element<'a, Message> {
-    if deskshell_ui::text::has_thai(content) {
+    if text::has_thai(content) {
         text::mixed(theme, content, tone, weight)
             .size(LABEL_SIZE)
             .wrapping(Wrapping::None)

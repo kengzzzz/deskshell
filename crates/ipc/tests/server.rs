@@ -372,7 +372,7 @@ fn lock_lock_outlives_the_default_handler_timeout() {
     ));
     assert_eq!(message, "The shell did not answer within 300 ms.");
     assert_eq!(
-        deskshell_ipc::Command::parse("lock", "lock", &[])
+        Command::parse("lock", "lock", &[])
             .unwrap()
             .handler_timeout(),
         Some(deskshell_ipc::LOCK_HANDLER_TIMEOUT)

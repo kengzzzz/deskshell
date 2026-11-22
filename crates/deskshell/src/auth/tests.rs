@@ -700,11 +700,11 @@ fn the_keyring_prompt_and_its_yubikey_wait() {
 #[test]
 fn the_link_carries_flows_commands_and_events() {
     struct Fake {
-        flow: tokio::sync::watch::Sender<Option<Flow>>,
+        flow: watch::Sender<Option<Flow>>,
         commands: tokio::sync::mpsc::UnboundedReceiver<PolkitCommand>,
         events: tokio::sync::mpsc::UnboundedSender<PolkitEvent>,
     }
-    let (flow_tx, flow_rx) = tokio::sync::watch::channel(None);
+    let (flow_tx, flow_rx) = watch::channel(None);
     let (commands, commands_rx) = tokio::sync::mpsc::unbounded_channel();
     let (events_tx, events) = tokio::sync::mpsc::unbounded_channel();
     let mut link = polkit::Link { flow: flow_rx, commands, events };

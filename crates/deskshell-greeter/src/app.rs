@@ -1001,7 +1001,7 @@ mod tests {
 
     #[test]
     fn a_broken_or_empty_config_is_a_reason() {
-        let dir = std::env::temp_dir().join(format!("deskshell-greeter-app-{}", process::id()));
+        let dir = env::temp_dir().join(format!("deskshell-greeter-app-{}", process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let mut paths = Paths::system(None);

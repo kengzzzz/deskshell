@@ -595,7 +595,7 @@ fn updates<'a>(
                 .size(13)
                 .line_height(LineHeight::Relative(LINE))
                 .color(text_color)
-                .wrapping(iced::widget::text::Wrapping::None),
+                .wrapping(text::Wrapping::None),
         )
         .width(Length::Fill)
         .clip(true),

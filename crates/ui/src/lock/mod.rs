@@ -135,7 +135,7 @@ pub fn avatar<'a>(theme: &'a Theme, picture: Option<&'a Handle>) -> Avatar<'a> {
     Avatar { theme, picture, initial: None, size: 52.0, ring: false }
 }
 
-impl<'a> Avatar<'a> {
+impl Avatar<'_> {
     pub fn size(mut self, size: f32) -> Self {
         self.size = size;
         self

@@ -1881,12 +1881,11 @@ mod tests {
         }
         assert_eq!(framed(&surfaces, &[]).count(), 0);
 
-        bars.osd
-            .show(&deskshell_media::OsdEvent {
-                kind: deskshell_media::DeviceKind::Sink,
-                volume: 0.5,
-                muted: false,
-            });
+        bars.osd.show(&OsdEvent {
+            kind: deskshell_media::DeviceKind::Sink,
+            volume: 0.5,
+            muted: false,
+        });
         assert_eq!(
             sync_anims(&mut surfaces, &mut bars, &theme, now),
             [dp],

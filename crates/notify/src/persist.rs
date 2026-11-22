@@ -411,7 +411,7 @@ mod tests {
         );
         assert_eq!(reader.metadata().unwrap().ino(), old_inode);
         assert_eq!(
-            std::io::read_to_string(reader).unwrap(),
+            io::read_to_string(reader).unwrap(),
             "old",
             "an open reader keeps the old file"
         );

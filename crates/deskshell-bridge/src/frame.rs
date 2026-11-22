@@ -132,7 +132,7 @@ pub fn printable(bytes: &[u8]) -> Vec<u8> {
 }
 
 pub fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
-    let cred = rustix::net::sockopt::socket_peercred(stream.as_fd())?;
+    let cred = net::sockopt::socket_peercred(stream.as_fd())?;
     Ok(cred.uid.as_raw())
 }
 

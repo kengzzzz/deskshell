@@ -54,7 +54,7 @@ mod tests {
 
         // Outside a zone the hook calls abort. Here that only counts, and the panic then
         // unwinds to catch_unwind, which stands in for the process ending.
-        let outside = std::panic::catch_unwind(|| panic!("outside"));
+        let outside = panic::catch_unwind(|| panic!("outside"));
         assert!(outside.is_err());
         assert_eq!(aborts.load(Ordering::SeqCst), 1);
 

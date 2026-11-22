@@ -289,9 +289,7 @@ fn only_input_asks_and_each_asks_until_the_frame() {
     let key_press = Event::Keyboard(keyboard::Event::KeyPressed {
         key: Key::Named(key::Named::Shift),
         modified_key: Key::Named(key::Named::Shift),
-        physical_key: keyboard::key::Physical::Unidentified(
-            keyboard::key::NativeCode::Unidentified,
-        ),
+        physical_key: key::Physical::Unidentified(key::NativeCode::Unidentified),
         location: keyboard::Location::Left,
         modifiers: keyboard::Modifiers::SHIFT,
         text: None,

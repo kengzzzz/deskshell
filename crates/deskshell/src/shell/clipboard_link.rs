@@ -216,7 +216,7 @@ impl Shell {
         }
     }
 
-    pub(super) fn clipboard_request(&mut self, id: window::Id, request: Request) -> Task<Message> {
+    pub(super) fn clipboard_request(&self, id: window::Id, request: Request) -> Task<Message> {
         let argv = [panel::binary(), "clipboard", "serve"];
         match request {
             Request::Copy(entry) => {

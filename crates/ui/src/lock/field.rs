@@ -96,7 +96,7 @@ pub fn pin_field<'a, Message>(
     }
 }
 
-impl<'a, Message> PinField<'a, Message> {
+impl<Message> PinField<'_, Message> {
     pub fn caret(mut self, caret: bool) -> Self {
         self.caret = caret;
         self

@@ -442,7 +442,7 @@ impl Manager {
             units
                 .calls
                 .transient
-                .push((name.clone(), mode, argv.clone(), texts));
+                .push((name, mode, argv.clone(), texts));
             if Path::new(&program) != this_binary() {
                 units.calls.refused.push(program);
                 return Err(SystemdError::UnitExists(String::from(

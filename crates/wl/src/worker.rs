@@ -1981,7 +1981,7 @@ impl Dispatch<ZwpLinuxDmabufFeedbackV1, ()> for State {
                 if !state.feedback_logged {
                     state.feedback_logged = true;
                     let mut mods = Vec::new();
-                    for fourcc in [format::ARGB8888, format::XRGB8888] {
+                    for fourcc in [ARGB8888, format::XRGB8888] {
                         state
                             .feedback
                             .modifiers(fourcc, &mut mods);
