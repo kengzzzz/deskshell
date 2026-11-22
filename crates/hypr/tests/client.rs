@@ -172,7 +172,7 @@ async fn layer_close_time_follows_the_fade_tree() {
     let client = Client::new(dir.paths());
 
     let close = client.layer_close_time().await.unwrap();
-    assert_eq!(close, Duration::from_millis(500));
+    assert_eq!(close, Some(Duration::from_millis(500)));
     assert_eq!(
         server.log(),
         ["[[BATCH]]j/getoption animations:enabled;j/animations"]
@@ -193,6 +193,21 @@ async fn layer_close_time_is_zero_with_animations_off() {
 
     assert_eq!(
         client.layer_close_time().await.unwrap(),
-        Duration::ZERO
+        Some(Duration::ZERO)
+    );
+}
+
+#[tokio::test]
+async fn layer_close_time_counts_an_unknown_toggle_as_on() {
+    let dir = TestDir::new();
+    let replies = Replies::default();
+    replies.set("j/getoption animations:enabled", "no such option");
+    replies.set("j/animations", &common::fixture("animations"));
+    let _server = RequestServer::start(&dir.paths(), replies);
+    let client = Client::new(dir.paths());
+
+    assert_eq!(
+        client.layer_close_time().await.unwrap(),
+        Some(Duration::from_millis(500))
     );
 }

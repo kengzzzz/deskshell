@@ -51,6 +51,7 @@ use crate::panel::launcher::{self, Bangs, bangs, usage};
 use crate::panel::share;
 use crate::panel::{self, Contents, Effect, Env};
 use crate::panels::{self, Manager, Op, Open, Panel, Route};
+use crate::screenshot::clearance::{Clearance, Fade};
 use crate::toasts::wiring;
 use crate::toasts::{self, Toasts};
 use crate::updates;
@@ -61,6 +62,7 @@ use crate::{pickers, screenshot};
 
 mod auth_link;
 mod bars;
+mod clearance_link;
 pub(crate) mod clipboard_link;
 mod hub;
 mod install;
@@ -215,7 +217,8 @@ pub fn run() -> ExitCode {
                 boot.take()
                     .expect("iced boots the shell once"),
             );
-            let prewarm = Task::batch([shell.prewarm_launcher(), shell.bar_boot()]);
+            let prewarm =
+                Task::batch([shell.prewarm_launcher(), shell.bar_boot(), shell.layer_fade_query()]);
             (shell, prewarm)
         },
         "deskshell",
@@ -526,6 +529,9 @@ pub enum Message {
     AuthEvent(crate::auth::Event),
     Clipboard(clipboard_link::Change),
     ShareHangup(u64),
+    LayerFade(Fade),
+    ConfigReloaded,
+    SnapshotWake { generation: u64, locked: bool },
 }
 
 // Only messages that change what a surface shows redraw, so an idle bar draws once a minute.
@@ -612,6 +618,7 @@ struct Shell {
     notify_feed: Feed<watch::Receiver<NotifyState>>,
     notify_effects: Feed<mpsc::UnboundedReceiver<NotifyEffect>>,
     urgent_feed: Feed<broadcast::Receiver<Notice>>,
+    reload_feed: Feed<broadcast::Receiver<Notice>>,
     signals: Feed<Signals>,
     toasts: Toasts,
     toast_surface: Option<ToastSurface>,
@@ -623,6 +630,9 @@ struct Shell {
     selector: screenshot::Selector,
     shot_requests: Vec<screenshot::Request>,
     shots: screenshot_link::Shots,
+    clearance: Clearance,
+    snapshot: Option<clearance_link::PendingSnapshot>,
+    snapshot_generation: u64,
     bar: bars::BarState,
     media: media::MediaLink,
     hub: hub::HubState,
@@ -650,6 +660,10 @@ impl Shell {
             (Some(_), Some(store)) => Some(store.subscribe()),
             _ => None,
         };
+        let reload = boot
+            .store
+            .as_ref()
+            .map(Store::subscribe);
         let (notify, notify_state, notify_feed, notify_effects) = match notify {
             Some(link) => (
                 Some(link.commands),
@@ -714,6 +728,7 @@ impl Shell {
             notify_feed: Feed::new(notify_feed),
             notify_effects: Feed::new(notify_effects),
             urgent_feed: Feed::new(urgent),
+            reload_feed: Feed::new(reload),
             signals: Feed::new(signals),
             toasts: Toasts::default(),
             toast_surface: None,
@@ -725,6 +740,9 @@ impl Shell {
             selector: screenshot::Selector::default(),
             shot_requests: Vec::with_capacity(8),
             shots: screenshot_link::Shots::new(),
+            clearance: Clearance::default(),
+            snapshot: None,
+            snapshot_generation: 0,
             bar,
             media,
             hub: hub::HubState::default(),
@@ -742,6 +760,8 @@ impl Shell {
             }
             Message::Opened(id) => self.opened(id),
             Message::Closed(id) => {
+                self.clearance
+                    .closed(id, Instant::now());
                 self.closed(id);
                 self.screenshot_closed(id)
             }
@@ -817,6 +837,7 @@ impl Shell {
             Message::ToastMonitor(monitor) => self.toast_monitor(monitor),
             Message::Quit => {
                 info!("signal received, leaving the event loop");
+                self.snapshot_cancel("the shell exits");
                 iced::exit()
             }
             Message::Holidays(holidays) => {
@@ -843,6 +864,12 @@ impl Shell {
             Message::AuthEvent(event) => self.updates_auth_event(event),
             Message::Clipboard(change) => self.clipboard_change(change),
             Message::ShareHangup(pick) => self.share_hangup(pick),
+            Message::LayerFade(fade) => {
+                self.layer_fade(fade);
+                Task::none()
+            }
+            Message::ConfigReloaded => self.layer_fade_query(),
+            Message::SnapshotWake { generation, locked } => self.snapshot_wake(generation, locked),
             _ => Task::none(),
         }
     }
@@ -1301,9 +1328,14 @@ impl Shell {
                 .map(Message::Theme),
             );
         }
-        subscriptions.push(
+        subscriptions.extend([
             Subscription::run_with(self.signals.clone(), signal_stream).map(|()| Message::Quit),
-        );
+            Subscription::run_with(
+                self.reload_feed.clone(),
+                clearance_link::reload_notices,
+            )
+            .map(|()| Message::ConfigReloaded),
+        ]);
         if self.notify.is_some() {
             subscriptions.extend([
                 Subscription::run_with(self.notify_feed.clone(), notify_changes)
@@ -1504,9 +1536,7 @@ impl Shell {
                 return Ok(Task::none());
             }
             (pickers::Route::SharePick, _) => self.share_pick(request),
-            (pickers::Route::Screenshot(mode), _) => {
-                self.screenshot_trigger(mode, Some(request), false)
-            }
+            (pickers::Route::Screenshot(mode), _) => self.screenshot_trigger(mode, Some(request)),
         };
         Ok(task)
     }
@@ -1549,7 +1579,11 @@ impl Shell {
                         id,
                     }));
                 }
-                screenshot::Request::Close(id) => tasks.push(Task::done(Message::RemoveWindow(id))),
+                screenshot::Request::Close(id) => {
+                    self.clearance
+                        .closing(id, Instant::now(), false);
+                    tasks.push(Task::done(Message::RemoveWindow(id)));
+                }
                 screenshot::Request::Convert { generation, surface, output } => {
                     tasks.push(self.screenshot_convert(generation, surface, &output));
                 }
@@ -1717,15 +1751,7 @@ impl Shell {
                 spawn(&argv, cwd.as_deref(), &self.forced_env);
                 Task::none()
             }
-            Effect::SpawnSettled(argv) => {
-                let forced_env = self.forced_env.clone();
-                let hypr = self.hypr_client.clone();
-                Task::future(async move {
-                    tokio::time::sleep(screenshot::flow::after_close(hypr).await).await;
-                    spawn(&argv, None, &forced_env);
-                })
-                .discard()
-            }
+            Effect::SpawnSettled(argv) => self.snapshot_queue(argv),
             Effect::Dispatch(lua) => match &self.hypr_client {
                 Some(client) => {
                     let client = client.clone();
@@ -1784,11 +1810,12 @@ impl Shell {
             Effect::Resize => self.media_resize(id),
             Effect::Updates(request) => self.updates_request(request),
             Effect::Clipboard(request) => self.clipboard_request(id, request),
-            Effect::Screenshot(mode) => self.screenshot_trigger(mode, None, true),
+            Effect::Screenshot(mode) => self.screenshot_trigger(mode, None),
         }
     }
 
     fn open_panel(&mut self, open: Open<window::Id>) -> Task<Message> {
+        self.snapshot_cancel("a panel opened");
         if let Some(command) = wiring::panel_opened(open.panel) {
             self.send_notify(command);
         }
@@ -1852,6 +1879,8 @@ impl Shell {
     }
 
     fn close_panel(&mut self, id: window::Id) -> Task<Message> {
+        self.clearance
+            .closing(id, Instant::now(), true);
         self.release_grab();
         self.captures.stop_all();
         self.contents.release(

@@ -106,7 +106,7 @@ impl Shell {
             self.share_reply.empty();
             return Task::none();
         }
-        let task = self.screenshot_trigger(Mode::Region, None, true);
+        let task = self.screenshot_trigger(Mode::Region, None);
         let run = self.shots.flow.current();
         info!(run, "share region selection");
         self.share_reply.region_run(run);
@@ -181,7 +181,6 @@ mod tests {
 
     use super::*;
     use crate::screenshot;
-    use crate::screenshot::flow::SETTLE;
     use crate::shell::screenshot_link::Event;
     use crate::shell::{Boot, Output};
 
@@ -399,13 +398,7 @@ mod tests {
             "the close does not answer"
         );
         for event in [
-            Event::Trigger {
-                run,
-                mode: Mode::Region,
-                request: None,
-                settle: SETTLE,
-                locked: false,
-            },
+            Event::Trigger { run, mode: Mode::Region, request: None, locked: false },
             Event::Check { run, locked: false },
             Event::Captured { run, result: Ok(frames()), locked: false },
         ] {
@@ -482,7 +475,7 @@ mod tests {
         let mut ipc = Ipc::start("region-shot");
         let mut shell = shell();
         let (client, _) = to_region(&mut ipc, &mut shell, "").await;
-        let _ = shell.screenshot_trigger(Mode::Area, None, false);
+        let _ = shell.screenshot_trigger(Mode::Area, None);
         assert_eq!(answer(client).await, "");
     }
 
@@ -525,7 +518,6 @@ mod tests {
             run,
             mode: Mode::Region,
             request: None,
-            settle: SETTLE,
             locked: true,
         }));
         assert_eq!(answer(client).await, "");

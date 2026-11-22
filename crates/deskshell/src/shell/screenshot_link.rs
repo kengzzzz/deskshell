@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use deskshell_core::screenshot::pixels::Placement;
 use deskshell_ipc::{Reply, Request};
@@ -85,7 +85,6 @@ pub enum Event {
         run: u64,
         mode: Mode,
         request: Option<Request>,
-        settle: Duration,
         locked: bool,
     },
     Check {
@@ -191,11 +190,11 @@ fn save_job(picture: &Picture, placements: &[Placement], dir: &Path) -> Result<S
 }
 
 impl Shell {
+    /// A panel closed just before waits through [`Shell::screenshot_check`].
     pub(super) fn screenshot_trigger(
         &mut self,
         mode: Mode,
         request: Option<Request>,
-        settle: bool,
     ) -> Task<Message> {
         if self.auth_has_keyboard() {
             info!("an auth prompt holds the keyboard, the screenshot is refused");
@@ -204,33 +203,23 @@ impl Shell {
             }
             return Task::none();
         }
-        let (run, open, closing) = self.screenshot_arrive();
+        let (run, closing) = self.screenshot_arrive();
         self.share_region_sweep();
         let systemd = self.systemd.clone();
-        let hypr = self.hypr_client.clone();
         let lookup = Task::future(async move {
-            let settle = async move {
-                if settle {
-                    flow::after_close(hypr).await
-                } else if open {
-                    flow::SETTLE
-                } else {
-                    Duration::ZERO
-                }
-            };
-            let (locked, settle) = tokio::join!(locked(systemd), settle);
-            Message::Screenshot(Event::Trigger { run, mode, request, settle, locked })
+            let locked = locked(systemd).await;
+            Message::Screenshot(Event::Trigger { run, mode, request, locked })
         });
         Task::batch([closing, lookup])
     }
 
-    fn screenshot_arrive(&mut self) -> (u64, bool, Task<Message>) {
+    fn screenshot_arrive(&mut self) -> (u64, Task<Message>) {
         let run = self.shots.flow.reserve();
         let mut shot_requests = std::mem::take(&mut self.shot_requests);
-        let open = self.selector.cancel(&mut shot_requests);
+        self.selector.cancel(&mut shot_requests);
         let closing = self.shot_requests(&mut shot_requests);
         self.shot_requests = shot_requests;
-        (run, open, closing)
+        (run, closing)
     }
 
     pub(super) fn screenshot_event(&mut self, event: Event) -> Task<Message> {
@@ -241,8 +230,8 @@ impl Shell {
 
     fn screenshot_step(&mut self, event: Event) -> Task<Message> {
         match event {
-            Event::Trigger { run, mode, request, settle, locked } => {
-                self.screenshot_start(run, mode, request, settle, locked)
+            Event::Trigger { run, mode, request, locked } => {
+                self.screenshot_start(run, mode, request, locked)
             }
             Event::Check { run, locked } => self.screenshot_check(run, locked),
             Event::Captured { run, result, locked } => {
@@ -285,7 +274,6 @@ impl Shell {
         run: u64,
         mode: Mode,
         request: Option<Request>,
-        settle: Duration,
         locked: bool,
     ) -> Task<Message> {
         if request
@@ -318,7 +306,7 @@ impl Shell {
         let started = self
             .shots
             .flow
-            .start(run, mode, settle, &mut requests);
+            .start(run, mode, Duration::ZERO, &mut requests);
         if let Some(request) = request {
             request.reply(Reply::Text(String::from(if started {
                 "ok"
@@ -333,16 +321,7 @@ impl Shell {
         let mut tasks = Vec::with_capacity(requests.len());
         for request in requests {
             match request {
-                flow::Request::Capture { run, settle } => {
-                    let systemd = self.systemd.clone();
-                    tasks.push(Task::future(async move {
-                        if !settle.is_zero() {
-                            tokio::time::sleep(settle).await;
-                        }
-                        let locked = locked(systemd).await;
-                        Message::Screenshot(Event::Check { run, locked })
-                    }));
-                }
+                flow::Request::Capture { run, settle } => tasks.push(self.check_after(run, settle)),
                 flow::Request::Select { run, frames, mode } => {
                     let names: Vec<&str> = frames
                         .iter()
@@ -375,9 +354,23 @@ impl Shell {
         Task::batch(tasks)
     }
 
+    fn check_after(&self, run: u64, wait: Duration) -> Task<Message> {
+        let systemd = self.systemd.clone();
+        Task::future(async move {
+            if !wait.is_zero() {
+                tokio::time::sleep(wait).await;
+            }
+            let locked = locked(systemd).await;
+            Message::Screenshot(Event::Check { run, locked })
+        })
+    }
+
     fn screenshot_check(&mut self, run: u64, locked: bool) -> Task<Message> {
         if !self.shots.flow.capturing(run) {
             return Task::none();
+        }
+        if let Some(wait) = self.clearance.wait(Instant::now()) {
+            return self.check_after(run, wait);
         }
         if locked || self.auth_has_keyboard() {
             info!(
@@ -727,14 +720,8 @@ mod tests {
 
     fn trigger(mode: Mode, locked: bool) -> impl FnOnce(&mut Shell, Request) -> Message {
         move |shell, request| {
-            let (run, open, _) = shell.screenshot_arrive();
-            Message::Screenshot(Event::Trigger {
-                run,
-                mode,
-                request: Some(request),
-                settle: if open { flow::SETTLE } else { Duration::ZERO },
-                locked,
-            })
+            let (run, _) = shell.screenshot_arrive();
+            Message::Screenshot(Event::Trigger { run, mode, request: Some(request), locked })
         }
     }
 
@@ -862,6 +849,33 @@ mod tests {
             "a prompt took the keyboard"
         );
         assert!(posts.try_recv().is_err(), "no toast");
+    }
+
+    #[tokio::test]
+    async fn a_closing_panel_holds_the_capture() {
+        let mut ipc = Ipc::start("clear");
+        let (mut shell, _posts) = shell();
+        ipc.call(&mut shell, "area", trigger(Mode::Area, false))
+            .await;
+        let panel = window::Id::unique();
+        shell
+            .clearance
+            .closing(panel, Instant::now(), true);
+        let check = Message::Screenshot(Event::Check { run: 1, locked: true });
+        let _ = shell.update(check);
+        assert!(
+            shell.shots.flow.capturing(1),
+            "the lock is read again after the wait"
+        );
+        let _ = shell.update(Message::Closed(panel));
+        let _ = shell.update(Message::Screenshot(Event::Check {
+            run: 1,
+            locked: true,
+        }));
+        assert!(
+            shell.shots.flow.capturing(1),
+            "the fade is not over"
+        );
     }
 
     #[tokio::test]
@@ -1158,7 +1172,7 @@ mod tests {
     async fn an_auth_prompt_during_the_lock_read_starts_nothing() {
         let mut ipc = Ipc::start("yield-lookup");
         let (mut shell, _posts) = shell();
-        let (run, _, _) = shell.screenshot_arrive();
+        let (run, _) = shell.screenshot_arrive();
         assert!(
             shell.shots.flow.is_active(),
             "the trigger is pending"
@@ -1171,7 +1185,6 @@ mod tests {
                     run,
                     mode: Mode::Area,
                     request: Some(request),
-                    settle: Duration::ZERO,
                     locked: false,
                 })
             })
@@ -1184,15 +1197,14 @@ mod tests {
     async fn two_triggers_whose_lock_reads_come_back_out_of_order() {
         let mut ipc = Ipc::start("order");
         let (mut shell, _posts) = shell();
-        let (first, _, _) = shell.screenshot_arrive();
-        let (second, _, _) = shell.screenshot_arrive();
+        let (first, _) = shell.screenshot_arrive();
+        let (second, _) = shell.screenshot_arrive();
         let answer = |run, mode| {
             move |_: &mut Shell, request| {
                 Message::Screenshot(Event::Trigger {
                     run,
                     mode,
                     request: Some(request),
-                    settle: Duration::ZERO,
                     locked: false,
                 })
             }
@@ -1222,7 +1234,7 @@ mod tests {
         let server = deskshell_ipc::Server::bind(&socket).unwrap();
         let mut requests = server.spawn(Duration::from_millis(50));
         let (mut shell, _posts) = shell();
-        let (run, _, _) = shell.screenshot_arrive();
+        let (run, _) = shell.screenshot_arrive();
         let path = socket.clone();
         let client = tokio::task::spawn_blocking(move || {
             deskshell_ipc::call(
@@ -1246,7 +1258,6 @@ mod tests {
             run,
             mode: Mode::Area,
             request: Some(request),
-            settle: Duration::ZERO,
             locked: false,
         }));
         assert!(!shell.shots.flow.is_active());

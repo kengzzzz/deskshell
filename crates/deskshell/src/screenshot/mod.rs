@@ -1,5 +1,6 @@
 //! The screenshot selector, its countdown pill, and the native screenshot flow.
 
+pub mod clearance;
 pub mod copy;
 pub mod flow;
 pub mod frame;

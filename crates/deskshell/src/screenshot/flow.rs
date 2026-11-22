@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use deskshell_core::screenshot::Region;
 use deskshell_core::screenshot::pixels::{self, Rect};
-use deskshell_hypr::Client;
 use deskshell_wl::shot;
 use tracing::{info, warn};
 
@@ -14,30 +13,8 @@ use super::Choice;
 pub type Frames = Arc<[shot::Frame]>;
 
 /// How long Hyprland gets to drop a closed surface from its outputs before a capture. The
-/// `deskshell-screenshot` layer rule turns its animation off. Other panels fade, see
-/// [`after_close`].
+/// `deskshell-screenshot` layer rule turns its animation off.
 pub const SETTLE: Duration = Duration::from_millis(100);
-
-/// About one frame, so the capture comes after the last faded frame.
-const FRAME: Duration = Duration::from_millis(50);
-
-/// The wait after a panel closed, until Hyprland has faded it out.
-pub async fn after_close(hypr: Option<Client>) -> Duration {
-    let Some(hypr) = hypr else {
-        return SETTLE;
-    };
-    match hypr.layer_close_time().await {
-        Ok(fade) => fade_settle(fade),
-        Err(err) => {
-            warn!(%err, "the layer fade time is unknown, the short settle stays");
-            SETTLE
-        }
-    }
-}
-
-fn fade_settle(fade: Duration) -> Duration {
-    (fade + FRAME).max(SETTLE)
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -244,15 +221,6 @@ mod tests {
     use deskshell_core::screenshot::Region;
 
     use super::*;
-
-    #[test]
-    fn a_panel_close_waits_out_the_fade() {
-        assert_eq!(
-            fade_settle(Duration::from_millis(500)),
-            Duration::from_millis(550)
-        );
-        assert_eq!(fade_settle(Duration::ZERO), SETTLE);
-    }
 
     fn frame(output: &str, width: u32, height: u32) -> shot::Frame {
         shot::Frame {

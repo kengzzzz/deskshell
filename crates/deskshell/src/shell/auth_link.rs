@@ -226,7 +226,12 @@ impl Shell {
                     "auth surface opens"
                 );
                 self.auth.surfaces[slot] = Some(Open { id, output, height });
-                let shot = if surface.keyboard() { self.screenshot_yield() } else { Task::none() };
+                let shot = if surface.keyboard() {
+                    self.snapshot_cancel("an auth prompt took the keyboard");
+                    self.screenshot_yield()
+                } else {
+                    Task::none()
+                };
                 Some(Task::batch([
                     shot,
                     Task::done(Message::NewLayerShell {
@@ -649,7 +654,6 @@ mod tests {
                 run,
                 mode: Mode::Area,
                 request: Some(request),
-                settle: Duration::ZERO,
                 locked: false,
             })
         }
