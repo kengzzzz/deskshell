@@ -85,7 +85,7 @@ pub enum Event {
         run: u64,
         mode: Mode,
         request: Option<Request>,
-        settle: bool,
+        settle: Duration,
         locked: bool,
     },
     Check {
@@ -206,10 +206,19 @@ impl Shell {
         }
         let (run, open, closing) = self.screenshot_arrive();
         self.share_region_sweep();
-        let settle = settle || open;
         let systemd = self.systemd.clone();
+        let hypr = self.hypr_client.clone();
         let lookup = Task::future(async move {
-            let locked = locked(systemd).await;
+            let settle = async move {
+                if settle {
+                    flow::after_close(hypr).await
+                } else if open {
+                    flow::SETTLE
+                } else {
+                    Duration::ZERO
+                }
+            };
+            let (locked, settle) = tokio::join!(locked(systemd), settle);
             Message::Screenshot(Event::Trigger { run, mode, request, settle, locked })
         });
         Task::batch([closing, lookup])
@@ -276,7 +285,7 @@ impl Shell {
         run: u64,
         mode: Mode,
         request: Option<Request>,
-        settle: bool,
+        settle: Duration,
         locked: bool,
     ) -> Task<Message> {
         if request
@@ -305,7 +314,6 @@ impl Shell {
             }
             return Task::none();
         }
-        let settle = if settle { flow::SETTLE } else { Duration::ZERO };
         let mut requests = Vec::with_capacity(1);
         let started = self
             .shots
@@ -719,12 +727,12 @@ mod tests {
 
     fn trigger(mode: Mode, locked: bool) -> impl FnOnce(&mut Shell, Request) -> Message {
         move |shell, request| {
-            let (run, settle, _) = shell.screenshot_arrive();
+            let (run, open, _) = shell.screenshot_arrive();
             Message::Screenshot(Event::Trigger {
                 run,
                 mode,
                 request: Some(request),
-                settle,
+                settle: if open { flow::SETTLE } else { Duration::ZERO },
                 locked,
             })
         }
@@ -1163,7 +1171,7 @@ mod tests {
                     run,
                     mode: Mode::Area,
                     request: Some(request),
-                    settle: false,
+                    settle: Duration::ZERO,
                     locked: false,
                 })
             })
@@ -1184,7 +1192,7 @@ mod tests {
                     run,
                     mode,
                     request: Some(request),
-                    settle: false,
+                    settle: Duration::ZERO,
                     locked: false,
                 })
             }
@@ -1238,7 +1246,7 @@ mod tests {
             run,
             mode: Mode::Area,
             request: Some(request),
-            settle: false,
+            settle: Duration::ZERO,
             locked: false,
         }));
         assert!(!shell.shots.flow.is_active());

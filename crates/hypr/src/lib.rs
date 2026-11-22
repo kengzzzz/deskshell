@@ -1,5 +1,6 @@
 //! Hyprland 0.57 IPC: requests, the socket2 event stream and a resyncing state store.
 
+mod animation;
 mod event;
 mod ipc;
 mod model;

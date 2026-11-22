@@ -158,3 +158,41 @@ async fn missing_socket_is_an_io_error() {
         .unwrap_err();
     assert_matches!(err, Error::Io(_), "{err:?}");
 }
+
+#[tokio::test]
+async fn layer_close_time_follows_the_fade_tree() {
+    let dir = TestDir::new();
+    let replies = Replies::default();
+    replies.set(
+        "j/getoption animations:enabled",
+        r#"{"option":"animations:enabled","bool":true,"set":true}"#,
+    );
+    replies.set("j/animations", &common::fixture("animations"));
+    let server = RequestServer::start(&dir.paths(), replies);
+    let client = Client::new(dir.paths());
+
+    let close = client.layer_close_time().await.unwrap();
+    assert_eq!(close, Duration::from_millis(500));
+    assert_eq!(
+        server.log(),
+        ["[[BATCH]]j/getoption animations:enabled;j/animations"]
+    );
+}
+
+#[tokio::test]
+async fn layer_close_time_is_zero_with_animations_off() {
+    let dir = TestDir::new();
+    let replies = Replies::default();
+    replies.set(
+        "j/getoption animations:enabled",
+        r#"{"option":"animations:enabled","bool":false,"set":true}"#,
+    );
+    replies.set("j/animations", &common::fixture("animations"));
+    let _server = RequestServer::start(&dir.paths(), replies);
+    let client = Client::new(dir.paths());
+
+    assert_eq!(
+        client.layer_close_time().await.unwrap(),
+        Duration::ZERO
+    );
+}

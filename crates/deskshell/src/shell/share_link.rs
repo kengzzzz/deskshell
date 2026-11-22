@@ -181,6 +181,7 @@ mod tests {
 
     use super::*;
     use crate::screenshot;
+    use crate::screenshot::flow::SETTLE;
     use crate::shell::screenshot_link::Event;
     use crate::shell::{Boot, Output};
 
@@ -398,7 +399,13 @@ mod tests {
             "the close does not answer"
         );
         for event in [
-            Event::Trigger { run, mode: Mode::Region, request: None, settle: true, locked: false },
+            Event::Trigger {
+                run,
+                mode: Mode::Region,
+                request: None,
+                settle: SETTLE,
+                locked: false,
+            },
             Event::Check { run, locked: false },
             Event::Captured { run, result: Ok(frames()), locked: false },
         ] {
@@ -518,7 +525,7 @@ mod tests {
             run,
             mode: Mode::Region,
             request: None,
-            settle: true,
+            settle: SETTLE,
             locked: true,
         }));
         assert_eq!(answer(client).await, "");

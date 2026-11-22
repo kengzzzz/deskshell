@@ -1719,8 +1719,9 @@ impl Shell {
             }
             Effect::SpawnSettled(argv) => {
                 let forced_env = self.forced_env.clone();
+                let hypr = self.hypr_client.clone();
                 Task::future(async move {
-                    tokio::time::sleep(screenshot::flow::SETTLE).await;
+                    tokio::time::sleep(screenshot::flow::after_close(hypr).await).await;
                     spawn(&argv, None, &forced_env);
                 })
                 .discard()

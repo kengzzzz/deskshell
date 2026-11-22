@@ -649,7 +649,7 @@ mod tests {
                 run,
                 mode: Mode::Area,
                 request: Some(request),
-                settle: false,
+                settle: Duration::ZERO,
                 locked: false,
             })
         }
