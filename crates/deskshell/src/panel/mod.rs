@@ -47,6 +47,7 @@ pub enum Effect {
     Close,
     Show(Panel),
     Spawn { argv: Vec<String>, cwd: Option<PathBuf> },
+    SpawnSettled(Vec<String>),
     Dispatch(String),
     CountLaunch(String),
     CountBang(String),

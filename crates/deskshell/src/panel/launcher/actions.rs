@@ -15,7 +15,7 @@ pub enum Run {
     ToggleKeepAwake,
     Deskshell(&'static [&'static str]),
     Screenshot(Mode),
-    Program(&'static [&'static str]),
+    Snapshot(&'static [&'static str]),
     Power(power::Action),
 }
 
@@ -104,7 +104,7 @@ pub const SHELL: [Action; 12] = [
         "colorize",
         "",
         "colour hyprpicker",
-        Run::Program(&["hyprpicker", "-a"]),
+        Run::Snapshot(&["hyprpicker", "-a"]),
     ),
     action(
         "dnd",
@@ -198,13 +198,11 @@ pub fn run(action: &Action, effects: &mut Vec<Effect>) {
                 .collect(),
             cwd: None,
         },
-        Run::Program(argv) => Effect::Spawn {
-            argv: argv
-                .iter()
+        Run::Snapshot(argv) => Effect::SpawnSettled(
+            argv.iter()
                 .map(|arg| (*arg).to_owned())
                 .collect(),
-            cwd: None,
-        },
+        ),
         Run::Power(power) => Effect::Spawn { argv: power.command(), cwd: None },
     });
 }
@@ -228,6 +226,25 @@ mod tests {
                     argv: vec![String::from("deskshell"), String::from("restart")],
                     cwd: None
                 }
+            ]
+        );
+    }
+
+    #[test]
+    fn color_picker_waits_for_the_launcher_to_close() {
+        let picker = all()
+            .find(|action| action.id == "color-picker")
+            .unwrap();
+        let mut effects = Vec::new();
+        run(&picker, &mut effects);
+        assert_eq!(
+            effects,
+            [
+                Effect::Close,
+                Effect::SpawnSettled(vec![
+                    String::from("hyprpicker"),
+                    String::from("-a")
+                ])
             ]
         );
     }

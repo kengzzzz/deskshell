@@ -1717,6 +1717,14 @@ impl Shell {
                 spawn(&argv, cwd.as_deref(), &self.forced_env);
                 Task::none()
             }
+            Effect::SpawnSettled(argv) => {
+                let forced_env = self.forced_env.clone();
+                Task::future(async move {
+                    tokio::time::sleep(crate::screenshot::flow::SETTLE).await;
+                    spawn(&argv, None, &forced_env);
+                })
+                .discard()
+            }
             Effect::Dispatch(lua) => match &self.hypr_client {
                 Some(client) => {
                     let client = client.clone();
