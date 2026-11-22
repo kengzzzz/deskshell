@@ -531,7 +531,8 @@ pub enum Message {
     ShareHangup(u64),
     LayerFade(Fade),
     ConfigReloaded,
-    SnapshotWake { generation: u64, locked: bool },
+    SnapshotWake(u64),
+    SnapshotReady { generation: u64, locked: bool },
 }
 
 // Only messages that change what a surface shows redraw, so an idle bar draws once a minute.
@@ -869,7 +870,10 @@ impl Shell {
                 Task::none()
             }
             Message::ConfigReloaded => self.layer_fade_query(),
-            Message::SnapshotWake { generation, locked } => self.snapshot_wake(generation, locked),
+            Message::SnapshotWake(generation) => self.snapshot_wake(generation),
+            Message::SnapshotReady { generation, locked } => {
+                self.snapshot_ready(generation, locked)
+            }
             _ => Task::none(),
         }
     }
@@ -1453,6 +1457,7 @@ impl Shell {
                 Task::none()
             }
             Route::Lock => {
+                self.snapshot_cancel("the session locks");
                 let Some(systemd) = self.systemd.clone() else {
                     warn!("no systemd user manager, `lock lock` fails");
                     return Task::none();

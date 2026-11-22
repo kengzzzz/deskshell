@@ -87,6 +87,10 @@ pub enum Event {
         request: Option<Request>,
         locked: bool,
     },
+    /// A wait for the clearance ended. The lock is read only once the screen is clear.
+    Clear {
+        run: u64,
+    },
     Check {
         run: u64,
         locked: bool,
@@ -233,6 +237,7 @@ impl Shell {
             Event::Trigger { run, mode, request, locked } => {
                 self.screenshot_start(run, mode, request, locked)
             }
+            Event::Clear { run } => self.screenshot_clear(run),
             Event::Check { run, locked } => self.screenshot_check(run, locked),
             Event::Captured { run, result, locked } => {
                 if locked {
@@ -355,11 +360,23 @@ impl Shell {
     }
 
     fn check_after(&self, run: u64, wait: Duration) -> Task<Message> {
-        let systemd = self.systemd.clone();
         Task::future(async move {
             if !wait.is_zero() {
                 tokio::time::sleep(wait).await;
             }
+            Message::Screenshot(Event::Clear { run })
+        })
+    }
+
+    fn screenshot_clear(&mut self, run: u64) -> Task<Message> {
+        if !self.shots.flow.capturing(run) {
+            return Task::none();
+        }
+        if let Some(wait) = self.clearance.wait(Instant::now()) {
+            return self.check_after(run, wait);
+        }
+        let systemd = self.systemd.clone();
+        Task::future(async move {
             let locked = locked(systemd).await;
             Message::Screenshot(Event::Check { run, locked })
         })
@@ -861,20 +878,37 @@ mod tests {
         shell
             .clearance
             .closing(panel, Instant::now(), true);
+        let _ = shell.update(Message::Screenshot(Event::Clear { run: 1 }));
         let check = Message::Screenshot(Event::Check { run: 1, locked: true });
         let _ = shell.update(check);
         assert!(
             shell.shots.flow.capturing(1),
-            "the lock is read again after the wait"
+            "a locked check during the close is a wait, not a refusal"
         );
         let _ = shell.update(Message::Closed(panel));
-        let _ = shell.update(Message::Screenshot(Event::Check {
-            run: 1,
-            locked: true,
-        }));
+        let check = Message::Screenshot(Event::Check { run: 1, locked: true });
+        let _ = shell.update(check);
         assert!(
             shell.shots.flow.capturing(1),
             "the fade is not over"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_close_long_over_leaves_the_lock_gate() {
+        let mut ipc = Ipc::start("cleared");
+        let (mut later, _posts) = shell();
+        ipc.call(&mut later, "area", trigger(Mode::Area, false))
+            .await;
+        let long_ago = Instant::now() - Duration::from_secs(5);
+        later
+            .clearance
+            .closing(window::Id::unique(), long_ago, true);
+        let check = Message::Screenshot(Event::Check { run: 1, locked: true });
+        let _ = later.update(check);
+        assert!(
+            !later.shots.flow.is_active(),
+            "once clear, the lock gate refuses"
         );
     }
 

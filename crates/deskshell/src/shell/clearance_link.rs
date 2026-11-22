@@ -1,7 +1,6 @@
-//! The shell's side of the capture clearance: Hyprland's layer fade and programs that snapshot
-//! the screen at startup.
+//! The shell's side of the capture clearance: the layer fade and the held color picker.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use deskshell_hypr::Notice;
 use iced::Task;
@@ -10,7 +9,9 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use tracing::{info, warn};
 
 use super::screenshot_link::locked;
-use super::{Message, Shell, spawn};
+#[cfg(not(test))]
+use super::spawn;
+use super::{Message, Shell};
 use crate::feed::Feed;
 use crate::screenshot::clearance::Fade;
 
@@ -51,34 +52,43 @@ impl Shell {
         self.snapshot_generation += 1;
         let generation = self.snapshot_generation;
         self.snapshot = Some(PendingSnapshot { generation, argv });
-        let wait = self
-            .clearance
-            .wait(Instant::now())
-            .unwrap_or_default();
-        self.snapshot_after(generation, wait)
+        self.snapshot_wake(generation)
     }
 
-    fn snapshot_after(&self, generation: u64, wait: Duration) -> Task<Message> {
-        let systemd = self.systemd.clone();
-        Task::future(async move {
-            if !wait.is_zero() {
-                tokio::time::sleep(wait).await;
-            }
-            let locked = locked(systemd).await;
-            Message::SnapshotWake { generation, locked }
-        })
-    }
-
-    pub(super) fn snapshot_wake(&mut self, generation: u64, locked: bool) -> Task<Message> {
-        if self
-            .snapshot
+    fn snapshot_current(&self, generation: u64) -> bool {
+        self.snapshot
             .as_ref()
-            .is_none_or(|snapshot| snapshot.generation != generation)
-        {
+            .is_some_and(|snapshot| snapshot.generation == generation)
+    }
+
+    /// The lock is read once the screen is clear, not on every wait.
+    pub(super) fn snapshot_wake(&mut self, generation: u64) -> Task<Message> {
+        if !self.snapshot_current(generation) {
             return Task::none();
         }
         if let Some(wait) = self.clearance.wait(Instant::now()) {
-            return self.snapshot_after(generation, wait);
+            return Task::future(async move {
+                tokio::time::sleep(wait).await;
+                Message::SnapshotWake(generation)
+            });
+        }
+        let systemd = self.systemd.clone();
+        Task::future(async move {
+            let locked = locked(systemd).await;
+            Message::SnapshotReady { generation, locked }
+        })
+    }
+
+    pub(super) fn snapshot_ready(&mut self, generation: u64, locked: bool) -> Task<Message> {
+        if !self.snapshot_current(generation) {
+            return Task::none();
+        }
+        if self
+            .clearance
+            .wait(Instant::now())
+            .is_some()
+        {
+            return self.snapshot_wake(generation);
         }
         let Some(snapshot) = self.snapshot.take() else {
             return Task::none();
@@ -91,8 +101,22 @@ impl Shell {
             );
             return Task::none();
         }
-        spawn(&snapshot.argv, None, &self.forced_env);
+        self.snapshot_launch(&snapshot.argv);
         Task::none()
+    }
+
+    #[cfg(not(test))]
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "the test build records the launch"
+    )]
+    fn snapshot_launch(&mut self, argv: &[String]) {
+        spawn(argv, None, &self.forced_env);
+    }
+
+    #[cfg(test)]
+    fn snapshot_launch(&mut self, argv: &[String]) {
+        self.shots.launched.push(argv.to_vec());
     }
 
     /// Something else took the screen first: a panel, an auth prompt or the shell's exit.
@@ -135,53 +159,57 @@ mod tests {
         shell.snapshot_generation
     }
 
-    // A closing panel keeps every wake from reaching the spawn.
-    fn held() -> Shell {
+    #[test]
+    fn a_clear_unlocked_screen_launches_once() {
         let mut shell = Shell::new(Boot::inert());
-        shell
-            .clearance
-            .closing(window::Id::unique(), Instant::now(), true);
-        shell
+        let generation = queued(&mut shell);
+        let _ = shell.snapshot_ready(generation, false);
+        let _ = shell.snapshot_ready(generation, false);
+        assert_eq!(shell.shots.launched, [["test-picker"]]);
+        assert!(shell.snapshot.is_none());
     }
 
     #[test]
     fn a_lock_or_a_prompt_drops_the_program() {
         let mut shell = Shell::new(Boot::inert());
         let generation = queued(&mut shell);
-        let _ = shell.snapshot_wake(generation, true);
+        let _ = shell.snapshot_ready(generation, true);
         assert!(shell.snapshot.is_none(), "locked");
         let generation = queued(&mut shell);
         shell.hold_auth_keyboard();
-        let _ = shell.snapshot_wake(generation, false);
+        let _ = shell.snapshot_ready(generation, false);
         assert!(
             shell.snapshot.is_none(),
             "a prompt holds the keyboard"
         );
+        assert!(shell.shots.launched.is_empty());
     }
 
     #[test]
     fn a_closing_panel_holds_the_program() {
-        let mut shell = held();
+        let mut shell = Shell::new(Boot::inert());
+        let panel = window::Id::unique();
+        shell
+            .clearance
+            .closing(panel, Instant::now(), true);
         let generation = queued(&mut shell);
-        let _ = shell.snapshot_wake(generation, false);
+        let _ = shell.snapshot_ready(generation, false);
+        assert!(shell.shots.launched.is_empty());
         assert!(shell.snapshot.is_some());
     }
 
     #[test]
-    fn a_stale_or_cancelled_wake_does_nothing() {
-        let mut shell = held();
+    fn a_stale_or_cancelled_request_does_not_launch() {
+        let mut shell = Shell::new(Boot::inert());
         let first = queued(&mut shell);
         let second = queued(&mut shell);
-        let _ = shell.snapshot_wake(first, false);
-        assert_eq!(
-            shell
-                .snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.generation),
-            Some(second)
+        let _ = shell.snapshot_ready(first, false);
+        assert!(
+            shell.shots.launched.is_empty(),
+            "a newer request replaced it"
         );
         shell.snapshot_cancel("a panel opened");
-        let _ = shell.snapshot_wake(second, false);
-        assert!(shell.snapshot.is_none());
+        let _ = shell.snapshot_ready(second, false);
+        assert!(shell.shots.launched.is_empty(), "cancelled");
     }
 }

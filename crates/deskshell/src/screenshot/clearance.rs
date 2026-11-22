@@ -52,16 +52,17 @@ impl Clearance {
             .push(Closing { id, since: now, fades });
     }
 
-    /// Any surface that closed, requested here or not.
+    /// Only a close requested through [`Clearance::closing`] counts, so toasts and tooltips
+    /// that come and go cannot hold a capture back.
     pub fn closed(&mut self, id: window::Id, now: Instant) {
-        let fades = match self
+        let Some(index) = self
             .closing
             .iter()
             .position(|closing| closing.id == id)
-        {
-            Some(index) => self.closing.swap_remove(index).fades,
-            None => true,
+        else {
+            return;
         };
+        let fades = self.closing.swap_remove(index).fades;
         self.clear_after(now + self.after_close(fades));
     }
 
@@ -139,12 +140,25 @@ mod tests {
         assert_eq!(clearance.wait(t0 + ms(640)), None);
     }
 
+    fn closed(clearance: &mut Clearance, now: Instant) {
+        let id = window::Id::unique();
+        clearance.closing(id, now, true);
+        clearance.closed(id, now);
+    }
+
     #[test]
     fn a_later_capture_inherits_the_outstanding_wait() {
         let mut clearance = known(500);
         let t0 = Instant::now();
-        clearance.closed(window::Id::unique(), t0);
+        closed(&mut clearance, t0);
         assert_eq!(clearance.wait(t0 + ms(450)), Some(ms(100)));
+    }
+
+    #[test]
+    fn a_close_not_requested_here_is_ignored() {
+        let mut clearance = known(500);
+        clearance.closed(window::Id::unique(), Instant::now());
+        assert_eq!(clearance.wait(Instant::now()), None);
     }
 
     #[test]
@@ -161,10 +175,10 @@ mod tests {
     fn an_unknown_or_turned_off_fade() {
         let t0 = Instant::now();
         let mut clearance = Clearance::default();
-        clearance.closed(window::Id::unique(), t0);
+        closed(&mut clearance, t0);
         assert_eq!(clearance.wait(t0), Some(UNKNOWN));
         let mut clearance = known(0);
-        clearance.closed(window::Id::unique(), t0);
+        closed(&mut clearance, t0);
         assert_eq!(clearance.wait(t0), Some(SETTLE));
     }
 
