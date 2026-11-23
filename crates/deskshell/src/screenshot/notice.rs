@@ -47,6 +47,14 @@ pub fn failed(reason: &str) -> Post {
     post("Screenshot failed", reason, Vec::new())
 }
 
+pub fn held() -> Post {
+    post(
+        "Screenshot unavailable",
+        "An authentication prompt is open",
+        Vec::new(),
+    )
+}
+
 pub fn gone() -> Post {
     post("Screenshot no longer available", "", Vec::new())
 }

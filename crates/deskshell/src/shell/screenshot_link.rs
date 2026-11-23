@@ -31,6 +31,8 @@ pub struct Shots {
     pub dir: PathBuf,
     #[cfg(test)]
     pub launched: Vec<Vec<String>>,
+    #[cfg(test)]
+    pub held_reads: u32,
 }
 
 impl Shots {
@@ -59,6 +61,7 @@ impl Shots {
             }),
             dir,
             launched: Vec::new(),
+            held_reads: 0,
         }
     }
 }
@@ -104,6 +107,10 @@ pub enum Event {
     Locked {
         run: u64,
         why: &'static str,
+    },
+    /// An auth prompt refused or ended a screenshot. The notice waits for the lock read.
+    Held {
+        locked: bool,
     },
     Saved(Result<Saved, String>),
     Copied {
@@ -205,7 +212,7 @@ impl Shell {
             if let Some(request) = request {
                 request.reply(Reply::Text(String::from("busy")));
             }
-            return Task::none();
+            return self.screenshot_held();
         }
         let (run, closing) = self.screenshot_arrive();
         self.share_region_sweep();
@@ -265,6 +272,12 @@ impl Shell {
                 let task = self.shot_requests(&mut requests);
                 self.shot_requests = requests;
                 task
+            }
+            Event::Held { locked } => {
+                if !locked {
+                    self.send_notify(NotifyCommand::Post(notice::held()));
+                }
+                Task::none()
             }
             Event::Saved(result) => self.screenshot_saved(result),
             Event::Copied { path, result } => {
@@ -596,7 +609,8 @@ impl Shell {
 
     /// An auth prompt took the keyboard, so the selection ends and no selector maps over it.
     pub(super) fn screenshot_yield(&mut self) -> Task<Message> {
-        self.shots.flow.cancel();
+        let native = !self.share_region_owns(self.shots.flow.current());
+        let ended = self.shots.flow.cancel();
         let mut requests = std::mem::take(&mut self.shot_requests);
         if self.selector.cancel(&mut requests) {
             info!("an auth prompt took the keyboard, the screenshot selection is cancelled");
@@ -604,7 +618,29 @@ impl Shell {
         let task = self.shot_requests(&mut requests);
         self.shot_requests = requests;
         self.share_region_sweep();
+        if ended && native {
+            return Task::batch([task, self.screenshot_held()]);
+        }
         task
+    }
+
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::needless_pass_by_ref_mut,
+            reason = "the test build counts the reads"
+        )
+    )]
+    fn screenshot_held(&mut self) -> Task<Message> {
+        #[cfg(test)]
+        {
+            self.shots.held_reads += 1;
+        }
+        let systemd = self.systemd.clone();
+        Task::future(async move {
+            let locked = locked(systemd).await;
+            Message::Screenshot(Event::Held { locked })
+        })
     }
 
     pub(super) fn screenshot_closed(&mut self, id: window::Id) -> Task<Message> {
@@ -755,7 +791,7 @@ mod tests {
     #[tokio::test]
     async fn an_auth_prompt_answers_busy() {
         let mut ipc = Ipc::start("busy");
-        let (mut shell, _posts) = shell();
+        let (mut shell, mut posts) = shell();
         hold_keyboard(&mut shell);
         let reply = ipc
             .call(&mut shell, "area", |_, request| {
@@ -764,6 +800,20 @@ mod tests {
             .await;
         assert!(reply.contains("busy"), "{reply}");
         assert!(!shell.shots.flow.is_active());
+        assert!(
+            posts.try_recv().is_err(),
+            "the notice waits for the lock read"
+        );
+        assert_eq!(shell.shots.held_reads, 1);
+        let _ = shell.update(Message::Screenshot(Event::Held { locked: true }));
+        assert!(
+            posts.try_recv().is_err(),
+            "no notice while locked"
+        );
+        let _ = shell.update(Message::Screenshot(Event::Held { locked: false }));
+        let (title, body, _) = summary(posts.try_recv().unwrap());
+        assert_eq!(title, "Screenshot unavailable");
+        assert_eq!(body, "An authentication prompt is open");
         let reply = ipc
             .call(&mut shell, "full", trigger(Mode::Full, false))
             .await;
@@ -772,6 +822,7 @@ mod tests {
             "a prompt that came during the lock read: {reply}"
         );
         assert!(!shell.shots.flow.is_active());
+        assert_eq!(shell.shots.held_reads, 1);
     }
 
     #[tokio::test]
@@ -970,6 +1021,7 @@ mod tests {
             shell.selector.is_pending(),
             "the touch card takes no keyboard"
         );
+        assert_eq!(shell.shots.held_reads, 0);
 
         let _ = shell.update(Message::AuthEvent(auth::Event::Flow(Some(
             polkit_flow(),
@@ -980,6 +1032,47 @@ mod tests {
         );
         assert!(!shell.selector.is_pending());
         assert!(!shell.shots.flow.is_active());
+        assert_eq!(
+            shell.shots.held_reads, 1,
+            "the cancel is reported"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sheet_during_the_lock_read_reports_once() {
+        let mut ipc = Ipc::start("sheet-read");
+        let (mut shell, _posts) = shell();
+        let (run, _) = shell.screenshot_arrive();
+        let _ = shell.update(Message::AuthEvent(auth::Event::Flow(Some(
+            polkit_flow(),
+        ))));
+        assert!(shell.auth_has_keyboard());
+        assert_eq!(shell.shots.held_reads, 1);
+        let reply = ipc
+            .call(&mut shell, "full", move |_, request| {
+                Message::Screenshot(Event::Trigger {
+                    run,
+                    mode: Mode::Full,
+                    request: Some(request),
+                    locked: false,
+                })
+            })
+            .await;
+        assert!(reply.contains("busy"), "{reply}");
+        assert_eq!(
+            shell.shots.held_reads, 1,
+            "the late read adds no notice"
+        );
+    }
+
+    #[test]
+    fn a_sheet_with_no_screenshot_reports_nothing() {
+        let (mut shell, _posts) = shell();
+        let _ = shell.update(Message::AuthEvent(auth::Event::Flow(Some(
+            polkit_flow(),
+        ))));
+        assert!(shell.auth_has_keyboard());
+        assert_eq!(shell.shots.held_reads, 0);
     }
 
     #[test]

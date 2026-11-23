@@ -134,6 +134,10 @@ impl Shell {
         }
     }
 
+    pub(super) fn share_region_owns(&self, run: u64) -> bool {
+        matches!(self.share_reply.stage(), Some(&Stage::Region { run: Some(owner), .. }) if owner == run)
+    }
+
     pub(super) fn share_region_sweep(&mut self) {
         let Some(&Stage::Region { run: Some(run), .. }) = self.share_reply.stage() else {
             return;
@@ -504,6 +508,16 @@ mod tests {
             why: "before a selector surface maps",
         }));
         assert_eq!(answer(client).await, "");
+    }
+
+    #[tokio::test]
+    async fn an_auth_prompt_ends_the_region_without_a_screenshot_notice() {
+        let mut ipc = Ipc::start("region-auth");
+        let mut shell = shell();
+        let (client, _) = to_region(&mut ipc, &mut shell, "").await;
+        let _ = shell.screenshot_yield();
+        assert_eq!(answer(client).await, "");
+        assert_eq!(shell.shots.held_reads, 0);
     }
 
     #[tokio::test]
