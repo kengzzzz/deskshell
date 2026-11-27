@@ -8,13 +8,10 @@ use iced::{Alignment, Background, Border, Color, Element, Length, Padding};
 
 use super::faillock::Lockout;
 use super::secret::Secret;
-use super::style::{self, LINE, frame, label, mixed_label};
+use super::style::{self, LINE, MARGIN, SIDE, frame, label, mixed_label};
 use crate::toasts::measure::Measure;
 
-pub const WIDTH: u32 = 700;
 pub const MIN_HEIGHT: f32 = 208.0;
-const MARGIN: f32 = 24.0;
-const SIDE: f32 = 28.0;
 const SPACING: f32 = 14.0;
 const INPUT_HEIGHT: f32 = 56.0;
 const FORM_GUESS: f32 = 172.0;

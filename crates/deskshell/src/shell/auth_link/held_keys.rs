@@ -83,7 +83,7 @@ impl KeyringSurface {
             now,
         )));
         let size = Size::new(
-            form::WIDTH as f32,
+            Surface::Keyring.width() as f32,
             self.auth.height(Surface::Keyring) as f32,
         );
         let cache = std::mem::replace(&mut self.cache, user_interface::Cache::new());

@@ -6,11 +6,11 @@ use iced::font::Weight;
 use iced::widget::{Column, container, row};
 use iced::{Alignment, Element, Length, Padding};
 
-use super::style::{frame, label, mixed_label};
+use super::style::{INDICATOR, INDICATOR_CORE, MARGIN, SIDE, frame, label, mixed_label};
 
 pub const NAMESPACE: &str = "deskshell-touch-prompt";
 pub const WIDTH: u32 = 480;
-pub const HEIGHT: u32 = 128;
+pub const HEIGHT: u32 = (INDICATOR + 2.0 * MARGIN) as u32;
 
 const GPG: &str = "GnuPG is waiting to use your OpenPGP key";
 const U2F: &str = "A security key request is waiting for confirmation";
@@ -64,8 +64,8 @@ impl TouchPrompt {
                 label(
                     theme,
                     "Touch your YubiKey",
-                    18.0,
-                    Weight::Semibold,
+                    16.0,
+                    Weight::Bold,
                     colors.text_primary,
                 )
                 .width(Length::Fill),
@@ -73,17 +73,17 @@ impl TouchPrompt {
             .push(mixed_label(
                 theme,
                 self.detail,
-                12.0,
+                13.0,
                 Weight::Normal,
-                colors.text_muted,
+                colors.text_secondary,
             ));
-        let content = row![touch_indicator(theme).core_size(40.0), texts]
+        let content = row![touch_indicator(theme).core_size(INDICATOR_CORE), texts]
             .spacing(14)
             .align_y(Alignment::Center);
         frame(
             theme,
             container(content)
-                .padding(Padding { top: 14.0, bottom: 14.0, left: 14.0, right: 28.0 })
+                .padding(Padding { top: MARGIN, bottom: MARGIN, left: SIDE, right: SIDE })
                 .width(Length::Fill)
                 .center_y(Length::Fill),
         )

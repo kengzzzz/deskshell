@@ -70,9 +70,8 @@ impl Surface {
 
     pub fn width(self) -> u32 {
         match self {
-            Self::Sheet(_) => sheet::WIDTH,
-            Self::Keyring => keyring::view::WIDTH,
             Self::Touch => touch::WIDTH,
+            Self::Sheet(_) | Self::Keyring => style::WIDTH,
         }
     }
 }

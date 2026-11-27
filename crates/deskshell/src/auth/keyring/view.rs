@@ -11,19 +11,16 @@ use tracing::debug;
 
 use super::service::{Command, Kind, Prompt, State};
 use crate::auth::secret::Secret;
-use crate::auth::style::{LINE, frame, label, mixed_label};
+use crate::auth::style::{
+    INDICATOR, INDICATOR_CORE, LINE, MARGIN, SIDE, frame, label, mixed_label,
+};
 use crate::toasts::measure::Measure;
 
 pub const NAMESPACE: &str = "deskshell-keyring-prompt";
-pub const WIDTH: u32 = 700;
 pub const PASSWORD_ID: &str = "keyring-password";
 pub const CONFIRM_ID: &str = "keyring-confirm";
-const MARGIN: f32 = 24.0;
-const SIDE: f32 = 28.0;
 const FIELD: f32 = 48.0;
 const BADGE: f32 = 48.0;
-const INDICATOR_CORE: f32 = 24.0;
-const INDICATOR: f32 = INDICATOR_CORE * 2.5;
 const FORM_GUESS: f32 = 160.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

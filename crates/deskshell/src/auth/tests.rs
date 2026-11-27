@@ -773,9 +773,10 @@ fn surfaces() {
     assert!(POLKIT.keyboard() && Surface::Keyring.keyboard());
     assert!(!Surface::Touch.keyboard());
     assert_eq!(POLKIT.width(), 700);
+    assert_eq!(Surface::Keyring.width(), 700);
     assert_eq!(Surface::Touch.width(), 480);
     let auth = auth();
-    assert_eq!(auth.height(Surface::Touch), 128);
+    assert_eq!(auth.height(Surface::Touch), 108);
     assert_eq!(auth.height(POLKIT), 220);
     for (index, surface) in Surface::ALL.iter().enumerate() {
         assert_eq!(surface.index(), index);

@@ -7,6 +7,11 @@ use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::{Space, Text, container, stack, text};
 use iced::{Background, Border, Color, Element, Length};
 
+pub const WIDTH: u32 = 700;
+pub const MARGIN: f32 = 24.0;
+pub const SIDE: f32 = 28.0;
+pub const INDICATOR_CORE: f32 = 24.0;
+pub const INDICATOR: f32 = INDICATOR_CORE * 2.5;
 pub const LINE: f32 = 1.3;
 pub const RADIUS: f32 = 28.0;
 const BORDER: f32 = 1.0;

@@ -814,12 +814,12 @@ mod tests {
         );
         assert_eq!(sheet.size, LayerSize::px(700, 220));
         assert_eq!(sheet.output_option, OutputOption::GlobalName(3));
-        let touch = auth_settings(Surface::Touch, None, 128);
+        let touch = auth_settings(Surface::Touch, None, 108);
         assert_eq!(
             touch.keyboard_interactivity,
             KeyboardInteractivity::None
         );
-        assert_eq!(touch.size, LayerSize::px(480, 128));
+        assert_eq!(touch.size, LayerSize::px(480, 108));
         assert_eq!(touch.output_option, OutputOption::Active);
         let keyring = auth_settings(Surface::Keyring, None, 0);
         assert_eq!(keyring.size, LayerSize::px(700, 1), "never 0");
