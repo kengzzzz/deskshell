@@ -23,6 +23,7 @@ iced.workspace = true
 iced_exwlshell.workspace = true
 image.workspace = true
 jiff.workspace = true
+libc.workspace = true
 png = "0.18.1"
 rustix = { workspace = true, features = ["event", "fs", "process", "net", "rand", "stdio"] }
 serde.workspace = true
